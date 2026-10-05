@@ -8,8 +8,6 @@ public class OrderBookEngine : IDisposable
 {
     private int _OrderCapacity;
     private int _PriceLevelCapacity;
-    private int _HeadIndex = 0;
-    private int _TailIndex = 0;
 
     private Order[] _Orders;
     private PriceLevel[] _AskPriceLevels;
@@ -17,6 +15,10 @@ public class OrderBookEngine : IDisposable
 
     private int _OrderHeadIndex = 0;
     private int _OrderTailIndex = 0;
+    private int _AskLevelHeadIndex = 0;
+    private int _AskLevelTailIndex = 0;
+    private int _BidLevelHeadIndex = 0;
+    private int _BidLevelTailIndex = 0;
     
     public OrderBookEngine(int orderCapacityPowerOf2, int priceLevelCapacityPowerOf2)
     {
@@ -46,25 +48,40 @@ public class OrderBookEngine : IDisposable
         if (IsDuplicateOrder(order.OrderId))
             return OrderStatus.Duplicate;
 
-        int orderIndex = FindOrderIndex(order.OrderId);
-        PriceLevel[] priceLevels;
+        // Add the order to OrderBook and find the associated PriceLevel index
+        PriceLevel[] priceLevels = (order.Side == OrderSide.Buy) ? _BidPriceLevels : _AskPriceLevels;
+        PriceLevel priceLevel;
         
-        if (_Orders[orderIndex].PriceLevelIndex != -1)
+        if (order.PriceLevelIndex != -1)
         {
-            priceLevels = (order.Side == OrderSide.Buy) ? _BidPriceLevels : _AskPriceLevels;
-            
-            if (_Orders[orderIndex].PriceLevelIndex >= priceLevels.Length)
+            if (order.PriceLevelIndex >= priceLevels.Length)
                 return OrderStatus.RejectedGeneral;
             
-            PriceLevel priceLevel = priceLevels[_Orders[orderIndex].PriceLevelIndex];
+            priceLevel = priceLevels[order.PriceLevelIndex];
         }
         else
         {
-            // Create new price level and set quantity
             // Find previous price level and update link pointers to insert new price level between
+            int priceLevelIndex = FindPriceLevelIndex(order.Price, priceLevels);
+            if (priceLevelIndex != -1)
+                priceLevelIndex = AddPriceLevel(order, priceLevels);
+
+            priceLevel = priceLevels[priceLevelIndex];
+            order.PriceLevelIndex = priceLevelIndex;
+        }
+
+        priceLevel.OrderCount++;
+        priceLevel.QuantityAvailable += order.TotalQuantity;
+
+        int tailIndex = GetOrderTailIndex();
+        if (GetOrderHeadIndex() != tailIndex + 1)
+        {
+            _Orders[tailIndex] = order;
+            _OrderHeadIndex++;
         }
         
         // Get the oldest time-priority order and fill it (should be at head index)
+        
         // If there is enough to fill entire order, update the remaining and return
         // Otherwise do a partial fill with available, then move to the next available
         // price level (direction depends on whether buy or sell order) to fill again (while)
@@ -95,7 +112,25 @@ public class OrderBookEngine : IDisposable
 
     private OrderStatus ValidateOrder(ref Order order)
     {
-        // Validate 
+        // Validate - Basic
+        if (order.OrderType == OrderType.Unknown)
+            return OrderStatus.RejectedGeneral;
+
+        if (order.FirmId <= 0)
+            return OrderStatus.RejectedGeneral;
+
+        if (order.RemainingQuantity < 0)
+            return OrderStatus.RejectedGeneral;
+
+        if (order.Side == OrderSide.Unknown)
+            return OrderStatus.RejectedGeneral;
+
+        if (order.TotalQuantity < order.RemainingQuantity)
+            return OrderStatus.RejectedGeneral;
+
+        if (order.TotalQuantity == 0)
+            return OrderStatus.RejectedGeneral;
+        
         return OrderStatus.Unknown;
     }
 
@@ -121,6 +156,75 @@ public class OrderBookEngine : IDisposable
         }
 
         return -1;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int FindPriceLevelIndex(long price, PriceLevel[] priceLevels)
+    {
+        for (int i = 0; i < _PriceLevelCapacity; i++)
+        {
+            if (priceLevels[i].Price == price)
+                return i;
+        }
+
+        return -1;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetOrderTailIndex() => _OrderHeadIndex & (_OrderCapacity - 1);
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetOrderHeadIndex() => _OrderHeadIndex & (_OrderCapacity - 1);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetPriceLevelTailIndex(OrderSide side)
+    {
+        if (side == OrderSide.Buy)
+        {
+            _BidPriceLevels;
+        }
+        else
+        {
+            _AskPriceLevels;
+        }
+        //return index & (_PriceLevelCapacity - 1);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int GetPriceLevelHeadIndex(OrderSide side)
+    {
+        PriceLevel[] priceLevels = (side == OrderSide.Buy ? _BidPriceLevels : _AskPriceLevels);
+        int index = (side == OrderSide.Buy ? _BidLevelHeadIndex : _AskLevelHeadIndex);
+        return index & (_PriceLevelCapacity - 1);
+    }
+
+    private int AddPriceLevel(ref readonly Order order, ref PriceLevel[] priceLevels)
+    {
+        // Find the price level with a price just above or below depending on OrderSide
+        long nextLowestPrice = 0L;
+        int nextLowestPriceIndex = -1;
+        int availableNewPriceIndex = -1;
+        
+        for (int i = 0; i < priceLevels.Length; i++)
+        {
+            if (priceLevels[i].Price < order.Price && priceLevels[i].Price > nextLowestPrice)
+            {
+                nextLowestPrice = priceLevels[i].Price;
+                nextLowestPriceIndex = i;
+            }
+            else
+                break;
+        }
+
+        int tailIndex = GetPriceLevelTailIndex(order.Side);
+        if (GetPriceLevelHeadIndex(order.Side) != tailIndex + 1)
+        {
+            availableNewPriceIndex = tailIndex;
+            
+            int nextHigherPriceIndex = priceLevels[nextLowestPriceIndex].NextIndex;
+            priceLevels[nextLowestPrice].NextIndex = availableNewPriceIndex;
+            priceLevels[nextHigherPriceIndex].PrevIndex = availableNewPriceIndex;
+        }
     }
     
     public void Dispose()
