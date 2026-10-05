@@ -7,11 +7,11 @@ public struct Order
 {
     public long OrderId;
     public long Price;
-    public OrderSide Side;       // Need an enum for this
-    public OrderType OrderType;  // Need an enum for this
+    public OrderSide Side;       
+    public OrderType OrderType;  
     public int TotalQuantity;
     public int RemainingQuantity;
-    public OrderStatus OrderStatus;    // Need an enum for this
+    public OrderStatus OrderStatus;    
     public int PriceLevelIndex;
     public long Timestamp;
     public TimeToLive TimeToLive;
@@ -39,6 +39,13 @@ public struct Order
         TimeToLive = timeToLive;
         FirmId = firmId;
         AccountId = accountId;
+    }
+
+    public void InitFrom(Order source)
+    {
+        Init(source.OrderId, source.Price, source.Side, source.OrderType, source.TotalQuantity,
+            source.RemainingQuantity, source.OrderStatus, source.PriceLevelIndex, source.Timestamp,
+            source.TimeToLive, source.FirmId, source.AccountId);
     }
 
     public void Clear()

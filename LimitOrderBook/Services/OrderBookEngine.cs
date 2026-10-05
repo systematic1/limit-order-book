@@ -6,15 +6,11 @@ namespace LimitOrderBook.Services;
 
 public class OrderBookEngine : IDisposable
 {
-    private int _OrderCapacity;
     private int _PriceLevelCapacity;
 
-    private Order[] _Orders;
     private PriceLevel[] _AskPriceLevels;
     private PriceLevel[] _BidPriceLevels;
 
-    private int _OrderHeadIndex = 0;
-    private int _OrderTailIndex = 0;
     private int _AskLevelHeadIndex = 0;
     private int _AskLevelTailIndex = 0;
     private int _BidLevelHeadIndex = 0;
@@ -22,16 +18,12 @@ public class OrderBookEngine : IDisposable
     
     public OrderBookEngine(int orderCapacityPowerOf2, int priceLevelCapacityPowerOf2)
     {
-        if ((orderCapacityPowerOf2 & (orderCapacityPowerOf2 - 1)) != 0) 
-            throw new ArgumentOutOfRangeException($"The {nameof(orderCapacityPowerOf2)} parameter must be a power of 2.");
         if ((priceLevelCapacityPowerOf2 & (priceLevelCapacityPowerOf2 - 1)) != 0) 
             throw new ArgumentOutOfRangeException($"The {nameof(priceLevelCapacityPowerOf2)} parameter must be a power of 2.");
         
-        _OrderCapacity = orderCapacityPowerOf2;
         _PriceLevelCapacity = priceLevelCapacityPowerOf2;
-        
+
         // Pre-allocate the pools and clear all the pool items
-        _Orders = ArrayPool<Order>.Shared.Rent(_OrderCapacity);
         _AskPriceLevels = ArrayPool<PriceLevel>.Shared.Rent(_PriceLevelCapacity);
         _BidPriceLevels = ArrayPool<PriceLevel>.Shared.Rent(_PriceLevelCapacity);
     }
@@ -145,19 +137,7 @@ public class OrderBookEngine : IDisposable
         int orderIndex = FindOrderIndex(orderId);
         return (orderIndex != -1);
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int FindOrderIndex(long orderId)
-    {
-        for (int i = 0; i < _OrderCapacity; i++)
-        {
-            if (_Orders[i].OrderId == orderId)
-                return i;
-        }
-
-        return -1;
-    }
-
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int FindPriceLevelIndex(long price, PriceLevel[] priceLevels)
     {
@@ -169,35 +149,7 @@ public class OrderBookEngine : IDisposable
 
         return -1;
     }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetOrderTailIndex() => _OrderHeadIndex & (_OrderCapacity - 1);
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetOrderHeadIndex() => _OrderHeadIndex & (_OrderCapacity - 1);
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetPriceLevelTailIndex(OrderSide side)
-    {
-        if (side == OrderSide.Buy)
-        {
-            _BidPriceLevels;
-        }
-        else
-        {
-            _AskPriceLevels;
-        }
-        //return index & (_PriceLevelCapacity - 1);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int GetPriceLevelHeadIndex(OrderSide side)
-    {
-        PriceLevel[] priceLevels = (side == OrderSide.Buy ? _BidPriceLevels : _AskPriceLevels);
-        int index = (side == OrderSide.Buy ? _BidLevelHeadIndex : _AskLevelHeadIndex);
-        return index & (_PriceLevelCapacity - 1);
-    }
-
+ 
     private int AddPriceLevel(ref readonly Order order, ref PriceLevel[] priceLevels)
     {
         // Find the price level with a price just above or below depending on OrderSide
@@ -231,6 +183,5 @@ public class OrderBookEngine : IDisposable
     {
         ArrayPool<PriceLevel>.Shared.Return(_BidPriceLevels);
         ArrayPool<PriceLevel>.Shared.Return(_AskPriceLevels);
-        ArrayPool<Order>.Shared.Return(_Orders);
     }
 }
