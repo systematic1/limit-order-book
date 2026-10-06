@@ -31,7 +31,7 @@ public struct PriceLevel
 
     public void Clear()
     {
-        Init(0L, 0L, 0, OrderSide.Unknown);
+        Init(0L, 0L, 0, OrderSide.Buy);
     }
 
     public bool IsEmpty()

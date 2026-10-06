@@ -8,7 +8,7 @@ public class OrderCollection : IDisposable
 {
     private int _Capacity;
     private Order[] _Orders;
-    private byte[] _AvailableIndices;
+    private bool[] _Available;
     private int _CountInUse;
     private int _LastIndex;
 
@@ -23,8 +23,8 @@ public class OrderCollection : IDisposable
         
         // Pre-allocate the pool and set available indices values to 1
         _Orders = ArrayPool<Order>.Shared.Rent(_Capacity);
-        _AvailableIndices = new byte[_Capacity];
-        Array.Fill<byte>(_AvailableIndices, 1);
+        _Available = new bool[_Capacity];
+        Array.Fill<bool>(_Available, true);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -32,10 +32,10 @@ public class OrderCollection : IDisposable
     {
         if (_CountInUse > 0)
         {
-            for (int i = 0; i < _Capacity; i++)
+            for (int index = 0; index < _Capacity; index++)
             {
-                if (_AvailableIndices[i] == 0 && _Orders[i].OrderId == orderId)
-                    return i;
+                if (!_Available[index] && _Orders[index].OrderId == orderId)
+                    return index;
             }
         }
 
@@ -43,15 +43,16 @@ public class OrderCollection : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool GetOrder(long orderId, ref Order foundOrder)
+    public bool GetOrder(long orderId, out Order foundOrder)
     {
         int index = FindOrderIndex(orderId);
         if (index == -1)
         {
-            foundOrder = ref _Orders[index];
+            foundOrder = _Orders[index];
             return true;
         }
-        
+
+        foundOrder = default;
         return false;
     }
 
@@ -62,7 +63,7 @@ public class OrderCollection : IDisposable
             int loopCount = 0;
             _LastIndex++;
 
-            while (_AvailableIndices[_LastIndex] == 0 && loopCount < _Capacity)
+            while (!_Available[_LastIndex] && loopCount < _Capacity)
             {
                 _LastIndex = (_LastIndex + 1) & (_Capacity - 1);
                 loopCount++;
@@ -71,7 +72,7 @@ public class OrderCollection : IDisposable
             if (loopCount < _Capacity)
             {
                 _Orders[_LastIndex].InitFrom(order);
-                _AvailableIndices[_LastIndex] = 0;
+                _Available[_LastIndex] = false;
                 _CountInUse++;
                 
                 return _LastIndex;
@@ -89,7 +90,7 @@ public class OrderCollection : IDisposable
             if (index == -1)
             {
                 _Orders[index].Clear();
-                _AvailableIndices[index] = 1;
+                _Available[index] = true;
                 _LastIndex = index - 1;
                 _CountInUse--;
 

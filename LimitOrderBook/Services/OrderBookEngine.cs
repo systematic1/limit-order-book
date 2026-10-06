@@ -6,79 +6,15 @@ namespace LimitOrderBook.Services;
 
 public class OrderBookEngine : IDisposable
 {
-    private int _PriceLevelCapacity;
-
-    private PriceLevel[] _AskPriceLevels;
-    private PriceLevel[] _BidPriceLevels;
-
-    private int _AskLevelHeadIndex = 0;
-    private int _AskLevelTailIndex = 0;
-    private int _BidLevelHeadIndex = 0;
-    private int _BidLevelTailIndex = 0;
+    private OrderCollection _Orders;
+    private PriceLevelCollection _AskPriceLevels;
+    private PriceLevelCollection _BidPriceLevels;
     
-    public OrderBookEngine(int orderCapacityPowerOf2, int priceLevelCapacityPowerOf2)
+    public OrderBookEngine(int orderCapacity, int priceLevelCapacity)
     {
-        if ((priceLevelCapacityPowerOf2 & (priceLevelCapacityPowerOf2 - 1)) != 0) 
-            throw new ArgumentOutOfRangeException($"The {nameof(priceLevelCapacityPowerOf2)} parameter must be a power of 2.");
-        
-        _PriceLevelCapacity = priceLevelCapacityPowerOf2;
-
-        // Pre-allocate the pools and clear all the pool items
-        _AskPriceLevels = ArrayPool<PriceLevel>.Shared.Rent(_PriceLevelCapacity);
-        _BidPriceLevels = ArrayPool<PriceLevel>.Shared.Rent(_PriceLevelCapacity);
-    }
-
-    public OrderStatus AddOrder(ref Order order)
-    {
-        OrderStatus status = ValidateOrder(ref order);
-        if (status != OrderStatus.Unknown)
-            return status;
-
-        if (DoesOrderViolateRiskCheck(ref order))
-            return OrderStatus.RejectedGeneral;
-        
-        if (IsDuplicateOrder(order.OrderId))
-            return OrderStatus.Duplicate;
-
-        // Add the order to OrderBook and find the associated PriceLevel index
-        PriceLevel[] priceLevels = (order.Side == OrderSide.Buy) ? _BidPriceLevels : _AskPriceLevels;
-        PriceLevel priceLevel;
-        
-        if (order.PriceLevelIndex != -1)
-        {
-            if (order.PriceLevelIndex >= priceLevels.Length)
-                return OrderStatus.RejectedGeneral;
-            
-            priceLevel = priceLevels[order.PriceLevelIndex];
-        }
-        else
-        {
-            // Find previous price level and update link pointers to insert new price level between
-            int priceLevelIndex = FindPriceLevelIndex(order.Price, priceLevels);
-            if (priceLevelIndex != -1)
-                priceLevelIndex = AddPriceLevel(order, priceLevels);
-
-            priceLevel = priceLevels[priceLevelIndex];
-            order.PriceLevelIndex = priceLevelIndex;
-        }
-
-        priceLevel.OrderCount++;
-        priceLevel.QuantityAvailable += order.TotalQuantity;
-
-        int tailIndex = GetOrderTailIndex();
-        if (GetOrderHeadIndex() != tailIndex + 1)
-        {
-            _Orders[tailIndex] = order;
-            _OrderHeadIndex++;
-        }
-        
-        // Get the oldest time-priority order and fill it (should be at head index)
-        
-        // If there is enough to fill entire order, update the remaining and return
-        // Otherwise do a partial fill with available, then move to the next available
-        // price level (direction depends on whether buy or sell order) to fill again (while)
-        
-        return OrderStatus.Resting;
+        _Orders = new OrderCollection(orderCapacity);
+        _AskPriceLevels = new PriceLevelCollection(priceLevelCapacity);
+        _BidPriceLevels = new PriceLevelCollection(priceLevelCapacity);
     }
 
     public OrderStatus CancelOrder(ref Order order)
@@ -87,101 +23,194 @@ public class OrderBookEngine : IDisposable
         if (status != OrderStatus.Unknown)
             return status;
         
-        int orderIndex = FindOrderIndex(order.OrderId);
+        int orderIndex = _Orders.FindOrderIndex(order.OrderId);
         if (orderIndex == -1)
             return OrderStatus.NotFound;
 
-        // Remove the order from the order list and update the corresponding price level
-        // remaining quantity and order count accordingly
+        // Find the price level and adjust the quantity remaining and order count
+        PriceLevel priceLevel;
+        if (order.Side == OrderSide.Buy)
+        {
+            if (!_BidPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+                return OrderStatus.NotFound;
+                
+            priceLevel.QuantityAvailable -= order.RemainingQuantity;
+            priceLevel.OrderCount--;
+        }
+        else
+        {
+            if (!_AskPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+                return OrderStatus.NotFound;
+                
+            priceLevel.QuantityAvailable -= order.RemainingQuantity;
+            priceLevel.OrderCount--;
+        }
+        
+        // Remove the order from the order list
+        order.PriceLevelIndex = -1;
+
+        if (!_Orders.RemoveOrder(ref order))
+            return OrderStatus.Rejected;
         
         return OrderStatus.Canceled;
     }
 
     public OrderStatus ModifyOrder(ref Order order)
     {
-        return OrderStatus.RejectedGeneral;
+        return OrderStatus.Rejected;
+    }
+
+    // ======================================================
+    
+    private OrderStatus AddOrder(ref Order order)
+    {
+        PriceLevel priceLevel;
+        int levelIndex;
+        long price = order.Price;
+
+        OrderStatus status = ValidateOrder(ref order);
+        if (status != OrderStatus.Unknown)
+            return status;
+
+        if (DoesOrderViolateRiskCheck(ref order))
+            return OrderStatus.Rejected;
+        
+        if (IsDuplicateOrder(order.OrderId))
+            return OrderStatus.Duplicate;
+
+        if (order.Side == OrderSide.Buy)
+        {
+            // If market order, find the lowest ask price available to start
+            if (order.OrderType == OrderType.Market)
+                price = _AskPriceLevels.GetNextHigherPriceLevel(long.MinValue);
+            
+            // We keep looking for more orders to fill until our order is completed
+            while (order.RemainingQuantity > 0)
+            {
+                if (!_AskPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+                {
+                    levelIndex = _AskPriceLevels.GetNextLowerPriceLevel(price);
+                    if (levelIndex == -1)   // If no more orders are available, jump out of loop here
+                        break;
+
+                    _AskPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                    order.PriceLevelIndex = levelIndex;
+                }
+
+                // Find a matching order and fill it
+                FillMatchingOrder(ref priceLevel, ref order);
+            }
+        }
+        else
+        {
+            // If market order, find the highest bid price available to start
+            if (order.OrderType == OrderType.Market)
+                price = _BidPriceLevels.GetNextLowerPriceLevel(long.MaxValue);
+
+            // We keep looking for more orders to fill until our order is completed
+            while (order.RemainingQuantity > 0)
+            {
+                if (!_BidPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+                {
+                    levelIndex = _BidPriceLevels.GetNextHigherPriceLevel(price);
+                    if (levelIndex == -1)  // If no more orders are available, jump out of loop here
+                        break;
+
+                    _BidPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                    order.PriceLevelIndex = levelIndex;
+                }
+                    
+                // Find a matching order and fill it
+                FillMatchingOrder(ref priceLevel, ref order);
+            }
+        }
+
+        // If we filled the entire order quantity, then return "filled" status
+        if (order.RemainingQuantity == 0)
+            return OrderStatus.Filled;
+            
+        order.Timestamp = DateTime.Now.Ticks;
+
+        // If we run out of qualifying limit orders, store the order in the book (resting)
+        if (AddOrderToBook(ref order))
+            return OrderStatus.PartiallyFilled;
+        else
+            return OrderStatus.Rejected;
     }
 
     private OrderStatus ValidateOrder(ref Order order)
     {
         // Validate - Basic
-        if (order.OrderType == OrderType.Unknown)
-            return OrderStatus.RejectedGeneral;
-
         if (order.FirmId <= 0)
-            return OrderStatus.RejectedGeneral;
+            return OrderStatus.Rejected;
 
         if (order.RemainingQuantity < 0)
-            return OrderStatus.RejectedGeneral;
-
-        if (order.Side == OrderSide.Unknown)
-            return OrderStatus.RejectedGeneral;
+            return OrderStatus.Rejected;
 
         if (order.TotalQuantity < order.RemainingQuantity)
-            return OrderStatus.RejectedGeneral;
+            return OrderStatus.Rejected;
 
         if (order.TotalQuantity == 0)
-            return OrderStatus.RejectedGeneral;
+            return OrderStatus.Rejected;
         
         return OrderStatus.Unknown;
     }
 
     private bool DoesOrderViolateRiskCheck(ref Order order)
     {
+        // TO DO ................
         return false;
+    }
+
+    private void FillMatchingOrder(ref PriceLevel priceLevel, ref Order order)
+    {
+        // TO DO ................
+    }
+
+    private bool AddOrderToBook(ref Order order)
+    {
+        PriceLevel priceLevel;
+        int levelIndex;
+        long price = order.Price;
+
+        if (_Orders.AddOrder(order) == -1)
+            return false;
+        
+        if (order.Side == OrderSide.Buy)
+        {
+            // Find the matching price level or create it if not already found
+            if (!_BidPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+            {
+                levelIndex = _BidPriceLevels.AddPriceLevel(price, order.Side);
+                _BidPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+            }
+        }
+        else
+        {
+            // Find the matching price level or create it if not already found
+            if (!_AskPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+            {
+                levelIndex = _AskPriceLevels.AddPriceLevel(price, order.Side);
+                _AskPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+            }
+        }
+
+        priceLevel.QuantityAvailable += order.RemainingQuantity;
+        priceLevel.OrderCount++; 
+
+        return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool IsDuplicateOrder(long orderId)
     {
-        int orderIndex = FindOrderIndex(orderId);
-        return (orderIndex != -1);
-    }
-    
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int FindPriceLevelIndex(long price, PriceLevel[] priceLevels)
-    {
-        for (int i = 0; i < _PriceLevelCapacity; i++)
-        {
-            if (priceLevels[i].Price == price)
-                return i;
-        }
-
-        return -1;
-    }
- 
-    private int AddPriceLevel(ref readonly Order order, ref PriceLevel[] priceLevels)
-    {
-        // Find the price level with a price just above or below depending on OrderSide
-        long nextLowestPrice = 0L;
-        int nextLowestPriceIndex = -1;
-        int availableNewPriceIndex = -1;
-        
-        for (int i = 0; i < priceLevels.Length; i++)
-        {
-            if (priceLevels[i].Price < order.Price && priceLevels[i].Price > nextLowestPrice)
-            {
-                nextLowestPrice = priceLevels[i].Price;
-                nextLowestPriceIndex = i;
-            }
-            else
-                break;
-        }
-
-        int tailIndex = GetPriceLevelTailIndex(order.Side);
-        if (GetPriceLevelHeadIndex(order.Side) != tailIndex + 1)
-        {
-            availableNewPriceIndex = tailIndex;
-            
-            int nextHigherPriceIndex = priceLevels[nextLowestPriceIndex].NextIndex;
-            priceLevels[nextLowestPrice].NextIndex = availableNewPriceIndex;
-            priceLevels[nextHigherPriceIndex].PrevIndex = availableNewPriceIndex;
-        }
+        return _Orders.FindOrderIndex(orderId) != -1;
     }
     
     public void Dispose()
     {
-        ArrayPool<PriceLevel>.Shared.Return(_BidPriceLevels);
-        ArrayPool<PriceLevel>.Shared.Return(_AskPriceLevels);
+        _BidPriceLevels.Dispose();
+        _AskPriceLevels.Dispose();
+        _Orders.Dispose();
     }
 }

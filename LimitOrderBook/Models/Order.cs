@@ -11,21 +11,20 @@ public struct Order
     public OrderType OrderType;  
     public int TotalQuantity;
     public int RemainingQuantity;
-    public OrderStatus OrderStatus;    
     public int PriceLevelIndex;
     public long Timestamp;
     public TimeToLive TimeToLive;
     public int FirmId;
     public long AccountId;
+    public long SecurityId;
 
     public Order()
     {
     }
 
     public void Init(long orderId, long price, OrderSide side, OrderType orderType, 
-        int totalQuantity, int remainingQuantity, OrderStatus orderStatus, 
-        int priceLevelIndex, long timestamp, TimeToLive timeToLive,
-        int firmId, long accountId)
+        int totalQuantity, int remainingQuantity, int priceLevelIndex, long timestamp, 
+        TimeToLive timeToLive, int firmId, long accountId, long securityId)
     {
         OrderId = orderId;
         Price = price;
@@ -33,25 +32,25 @@ public struct Order
         OrderType = orderType;
         TotalQuantity = totalQuantity;
         RemainingQuantity = remainingQuantity;
-        OrderStatus = OrderStatus.Unknown;
         PriceLevelIndex = priceLevelIndex;
         Timestamp = timestamp;
         TimeToLive = timeToLive;
         FirmId = firmId;
         AccountId = accountId;
+        SecurityId = securityId;
     }
 
     public void InitFrom(Order source)
     {
         Init(source.OrderId, source.Price, source.Side, source.OrderType, source.TotalQuantity,
-            source.RemainingQuantity, source.OrderStatus, source.PriceLevelIndex, source.Timestamp,
-            source.TimeToLive, source.FirmId, source.AccountId);
+            source.RemainingQuantity, source.PriceLevelIndex, source.Timestamp,
+            source.TimeToLive, source.FirmId, source.AccountId, source.SecurityId);
     }
 
     public void Clear()
     {
-        Init(0L, 0L, OrderSide.Unknown, OrderType.Unknown, 0,
-            0, OrderStatus.Unknown, -1, 0, TimeToLive.GoodTilCanceled,
-            -1, -1);
+        Init(0L, 0L, OrderSide.Buy, OrderType.Limit, 0,
+            0, -1, 0, TimeToLive.GoodTilCanceled,
+            -1, -1L, -1L);
     }
 }
