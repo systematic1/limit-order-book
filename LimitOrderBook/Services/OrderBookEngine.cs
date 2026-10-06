@@ -17,52 +17,7 @@ public class OrderBookEngine : IDisposable
         _BidPriceLevels = new PriceLevelCollection(priceLevelCapacity);
     }
 
-    public OrderStatus CancelOrder(ref Order order)
-    {
-        OrderStatus status = ValidateOrder(ref order);
-        if (status != OrderStatus.Unknown)
-            return status;
-        
-        int orderIndex = _Orders.FindOrderIndex(order.OrderId);
-        if (orderIndex == -1)
-            return OrderStatus.NotFound;
-
-        // Find the price level and adjust the quantity remaining and order count
-        PriceLevel priceLevel;
-        if (order.Side == OrderSide.Buy)
-        {
-            if (!_BidPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
-                return OrderStatus.NotFound;
-                
-            priceLevel.QuantityAvailable -= order.RemainingQuantity;
-            priceLevel.OrderCount--;
-        }
-        else
-        {
-            if (!_AskPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
-                return OrderStatus.NotFound;
-                
-            priceLevel.QuantityAvailable -= order.RemainingQuantity;
-            priceLevel.OrderCount--;
-        }
-        
-        // Remove the order from the order list
-        order.PriceLevelIndex = -1;
-
-        if (!_Orders.RemoveOrder(ref order))
-            return OrderStatus.Rejected;
-        
-        return OrderStatus.Canceled;
-    }
-
-    public OrderStatus ModifyOrder(ref Order order)
-    {
-        return OrderStatus.Rejected;
-    }
-
-    // ======================================================
-    
-    private OrderStatus AddOrder(ref Order order)
+    public OrderStatus AddOrder(ref Order order)
     {
         PriceLevel priceLevel;
         int levelIndex;
@@ -72,12 +27,9 @@ public class OrderBookEngine : IDisposable
         if (status != OrderStatus.Unknown)
             return status;
 
-        if (DoesOrderViolateRiskCheck(ref order))
+        if (DoesOrderViolateRisk(ref order))
             return OrderStatus.Rejected;
         
-        if (IsDuplicateOrder(order.OrderId))
-            return OrderStatus.Duplicate;
-
         if (order.Side == OrderSide.Buy)
         {
             // If market order, find the lowest ask price available to start
@@ -138,6 +90,51 @@ public class OrderBookEngine : IDisposable
             return OrderStatus.Rejected;
     }
 
+    public OrderStatus CancelOrder(ref Order order)
+    {
+        OrderStatus status = ValidateOrder(ref order);
+        if (status != OrderStatus.Unknown)
+            return status;
+        
+        int orderIndex = _Orders.FindOrderIndex(order.OrderId);
+        if (orderIndex == -1)
+            return OrderStatus.NotFound;
+
+        // Find the price level and adjust the quantity remaining and order count
+        PriceLevel priceLevel;
+        if (order.Side == OrderSide.Buy)
+        {
+            if (!_BidPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+                return OrderStatus.NotFound;
+                
+            priceLevel.QuantityAvailable -= order.RemainingQuantity;
+            priceLevel.OrderCount--;
+        }
+        else
+        {
+            if (!_AskPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+                return OrderStatus.NotFound;
+                
+            priceLevel.QuantityAvailable -= order.RemainingQuantity;
+            priceLevel.OrderCount--;
+        }
+        
+        // Remove the order from the order list
+        order.PriceLevelIndex = -1;
+
+        if (!_Orders.RemoveOrder(ref order))
+            return OrderStatus.Rejected;
+        
+        return OrderStatus.Canceled;
+    }
+
+    public OrderStatus ModifyOrder(ref Order order)
+    {
+        return OrderStatus.Rejected;
+    }
+
+    // ======================================================
+    
     private OrderStatus ValidateOrder(ref Order order)
     {
         // Validate - Basic
@@ -153,18 +150,57 @@ public class OrderBookEngine : IDisposable
         if (order.TotalQuantity == 0)
             return OrderStatus.Rejected;
         
+        if (IsDuplicateOrder(order.OrderId))
+            return OrderStatus.Duplicate;
+
         return OrderStatus.Unknown;
     }
 
-    private bool DoesOrderViolateRiskCheck(ref Order order)
+    private bool DoesOrderViolateRisk(ref Order order)
     {
-        // TO DO ................
+        // This will not be implemented - always assume risk check passes
         return false;
     }
 
     private void FillMatchingOrder(ref PriceLevel priceLevel, ref Order order)
     {
-        // TO DO ................
+        Order bestOrder;
+        OrderSide matchSide = (order.Side == OrderSide.Sell ? OrderSide.Buy : OrderSide.Sell);
+        int quantity = order.RemainingQuantity;
+
+        if (_Orders.FindBestAtPriceLevel(ref priceLevel, matchSide, out bestOrder))
+        {
+            if (bestOrder.AccountId != order.AccountId && bestOrder.RemainingQuantity > 0)
+            {
+                if (bestOrder.RemainingQuantity >= quantity)
+                {
+                    bestOrder.RemainingQuantity -= quantity;
+                    bestOrder.Timestamp = DateTime.Now.Ticks;
+                    order.Timestamp = bestOrder.Timestamp;
+                    order.RemainingQuantity = 0;
+                }
+                else
+                {
+                    quantity = bestOrder.RemainingQuantity;
+                    order.RemainingQuantity -= bestOrder.RemainingQuantity;
+                    order.Timestamp = DateTime.Now.Ticks;
+                    bestOrder.Timestamp = order.Timestamp;
+                    bestOrder.RemainingQuantity = 0;
+                }
+
+                NotifyOrderFillStatus(ref bestOrder);
+                
+                // Update price level data
+                priceLevel.QuantityAvailable -= quantity;
+                priceLevel.LastFillQuantity = quantity;
+                priceLevel.LastFillTimestamp = DateTime.Now.Ticks;
+                
+                // If the bestOrder was completely filled, it needs to be removed from the orderbook
+                if (bestOrder.RemainingQuantity == 0)
+                    _Orders.RemoveOrder(ref bestOrder);
+            }
+        }
+
     }
 
     private bool AddOrderToBook(ref Order order)
@@ -199,6 +235,11 @@ public class OrderBookEngine : IDisposable
         priceLevel.OrderCount++; 
 
         return true;
+    }
+
+    private void NotifyOrderFillStatus(ref Order order)
+    {
+        // Not implemented here
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

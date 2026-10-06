@@ -100,6 +100,12 @@ public class OrderCollection : IDisposable
 
         return false;
     }
+
+    public bool FindBestAtPriceLevel(ref PriceLevel priceLevel, OrderSide matchSide, out Order bestOrder)
+    {
+        bestOrder = default;
+        return false;
+    }
     
     public void Dispose()
     {
