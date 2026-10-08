@@ -119,10 +119,13 @@ public class OrderCollection : IDisposable
                 nextIndex = nextLevel.NextLowerIndex;
             else
                 nextIndex = nextLevel.NextHigherIndex;
-            
-            wasFound = levels.GetPriceLevelByIndex(nextIndex, out nextLevel);
 
-        } while (nextLevel.IsEmpty() && wasFound);
+            if (nextIndex != -1)
+                wasFound = levels.GetPriceLevelByIndex(nextIndex, out nextLevel);
+            else
+                wasFound = false;
+
+        } while (wasFound && nextLevel.IsEmpty());
 
         if (wasFound)
             return FindOldestOrderAtPriceLevel(nextIndex, out matchingOrder);            
