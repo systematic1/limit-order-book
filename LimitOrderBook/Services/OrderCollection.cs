@@ -127,8 +127,8 @@ public class OrderCollection : IDisposable
 
         } while (wasFound && nextLevel.IsEmpty());
 
-        if (wasFound)
-            return FindOldestOrderAtPriceLevel(nextIndex, out matchingOrder);            
+        if (nextIndex != -1)
+            return FindOldestOrderAtPriceLevel(nextIndex, out matchingOrder);
         else
         {
             matchingOrder = default;
