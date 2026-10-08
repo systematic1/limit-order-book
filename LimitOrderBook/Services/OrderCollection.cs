@@ -101,9 +101,61 @@ public class OrderCollection : IDisposable
         return false;
     }
 
-    public bool FindBestAtPriceLevel(ref PriceLevel priceLevel, OrderSide matchSide, out Order bestOrder)
+    public bool FindBestAtPriceLevel(ref PriceLevel priceLevel, ref PriceLevelCollection levels, 
+        OrderSide matchSide, out Order matchingOrder)
     {
-        bestOrder = default;
+        // Search for the next order by date/time and price (ask=search higher, bid=search lower)
+        // * Use the PriceLevel.NextHigherIndex or PriceLevel.NextLowerIndex
+        // * Move to next price level and search for orders matching that price level index
+        // * Find the oldest order
+
+        PriceLevel nextLevel = priceLevel;
+        int nextIndex;
+        bool wasFound;
+
+        do
+        {
+            if (matchSide == OrderSide.Buy)
+                nextIndex = nextLevel.NextLowerIndex;
+            else
+                nextIndex = nextLevel.NextHigherIndex;
+            
+            wasFound = levels.GetPriceLevelByIndex(nextIndex, out nextLevel);
+
+        } while (nextLevel.IsEmpty() && wasFound);
+
+        if (wasFound)
+            return FindOldestOrderAtPriceLevel(nextIndex, out matchingOrder);            
+        else
+        {
+            matchingOrder = default;
+            return false;
+        }
+    }
+
+    private bool FindOldestOrderAtPriceLevel(int priceLevelIndex, out Order order)
+    {
+        long oldestTicks = DateTime.Now.Ticks;
+        int oldestIndex = -1;
+        
+        for (int index = 0; index < _Capacity; index++)
+        {
+            if (!_Available[index] &&
+                _Orders[index].PriceLevelIndex == priceLevelIndex &&
+                oldestTicks > _Orders[index].Timestamp)
+            {
+                oldestTicks = _Orders[index].Timestamp;
+                oldestIndex = index;                    
+            }
+        }
+
+        if (oldestIndex != -1)
+        {
+            order = _Orders[oldestIndex];
+            return true;
+        }
+
+        order = default;
         return false;
     }
     

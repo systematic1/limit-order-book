@@ -166,9 +166,11 @@ public class OrderBookEngine : IDisposable
     {
         Order bestOrder;
         OrderSide matchSide = (order.Side == OrderSide.Sell ? OrderSide.Buy : OrderSide.Sell);
+        PriceLevelCollection priceLevels = (order.Side == OrderSide.Sell ? _BidPriceLevels : _AskPriceLevels);
         int quantity = order.RemainingQuantity;
 
-        if (_Orders.FindBestAtPriceLevel(ref priceLevel, matchSide, out bestOrder))
+        // Search the order list for the best available order by time-priority
+        if (_Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide, out bestOrder))
         {
             if (bestOrder.AccountId != order.AccountId && bestOrder.RemainingQuantity > 0)
             {
