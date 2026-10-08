@@ -128,9 +128,14 @@ public class OrderBookEngine : IDisposable
         return OrderStatus.Canceled;
     }
 
-    public OrderStatus ModifyOrder(ref Order order)
+    //public OrderStatus ModifyOrder(ref Order order)
+    //{
+    //    return OrderStatus.Rejected;
+    //}
+
+    public void NotifyOrderFillStatus(ref Order order, OrderStatus status)
     {
-        return OrderStatus.Rejected;
+        // Not implemented here
     }
 
     // ======================================================
@@ -164,33 +169,36 @@ public class OrderBookEngine : IDisposable
 
     private void FillMatchingOrder(ref PriceLevel priceLevel, ref Order order)
     {
-        Order bestOrder;
+        Order matchedOrder;
         OrderSide matchSide = (order.Side == OrderSide.Sell ? OrderSide.Buy : OrderSide.Sell);
+        OrderStatus matchedStatus = default;
         PriceLevelCollection priceLevels = (order.Side == OrderSide.Sell ? _BidPriceLevels : _AskPriceLevels);
         int quantity = order.RemainingQuantity;
 
         // Search the order list for the best available order by time-priority
-        if (_Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide, out bestOrder))
+        if (_Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide, out matchedOrder))
         {
-            if (bestOrder.AccountId != order.AccountId && bestOrder.RemainingQuantity > 0)
+            if (matchedOrder.AccountId != order.AccountId && matchedOrder.RemainingQuantity > 0)
             {
-                if (bestOrder.RemainingQuantity >= quantity)
+                if (matchedOrder.RemainingQuantity >= quantity)
                 {
-                    bestOrder.RemainingQuantity -= quantity;
-                    bestOrder.Timestamp = DateTime.Now.Ticks;
-                    order.Timestamp = bestOrder.Timestamp;
+                    matchedStatus = OrderStatus.Filled;
+                    matchedOrder.RemainingQuantity -= quantity;
+                    matchedOrder.Timestamp = DateTime.Now.Ticks;
+                    order.Timestamp = matchedOrder.Timestamp;
                     order.RemainingQuantity = 0;
                 }
                 else
                 {
-                    quantity = bestOrder.RemainingQuantity;
-                    order.RemainingQuantity -= bestOrder.RemainingQuantity;
+                    quantity = matchedOrder.RemainingQuantity;
+                    order.RemainingQuantity -= quantity;
                     order.Timestamp = DateTime.Now.Ticks;
-                    bestOrder.Timestamp = order.Timestamp;
-                    bestOrder.RemainingQuantity = 0;
+                    matchedStatus = OrderStatus.Filled;
+                    matchedOrder.Timestamp = order.Timestamp;
+                    matchedOrder.RemainingQuantity = 0;
                 }
 
-                NotifyOrderFillStatus(ref bestOrder);
+                NotifyOrderFillStatus(ref matchedOrder, matchedStatus);
                 
                 // Update price level data
                 priceLevel.QuantityAvailable -= quantity;
@@ -198,8 +206,8 @@ public class OrderBookEngine : IDisposable
                 priceLevel.LastFillTimestamp = DateTime.Now.Ticks;
                 
                 // If the bestOrder was completely filled, it needs to be removed from the orderbook
-                if (bestOrder.RemainingQuantity == 0)
-                    _Orders.RemoveOrder(ref bestOrder);
+                if (matchedOrder.RemainingQuantity == 0)
+                    _Orders.RemoveOrder(ref matchedOrder);
             }
         }
 
@@ -237,11 +245,6 @@ public class OrderBookEngine : IDisposable
         priceLevel.OrderCount++; 
 
         return true;
-    }
-
-    private void NotifyOrderFillStatus(ref Order order)
-    {
-        // Not implemented here
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
