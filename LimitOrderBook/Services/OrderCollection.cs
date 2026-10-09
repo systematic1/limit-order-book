@@ -8,19 +8,18 @@ public class OrderCollection : IDisposable
 {
     /*
      CLAUDE.AI:
-     
-        - GetOrder and RemoveOrder: both tested index == -1 where they needed != -1. In C# 
-          they threw IndexOutOfRangeException whenever they ran.
-        - AddOrder: it did a plain _LastIndex++, which runs past the end of the array once
-          _LastIndex reaches _Capacity - 1. It now wraps with the same mask the loop uses.
-        - In C# the out Order was a copy if Order is a struct, which meant the engine’s updates 
-          to the matched order’s RemainingQuantity would never reach the book.   
-          
-        SUGGESTIONS
-        
+             
         - FindOrderIndex and FindOldestOrderAtPriceLevel scan the whole array linearly, so every 
-          AddOrder is O(capacity) because of the duplicate check. I kept the original design. An 
-          unordered_map<orderId, index> (C++) would make the lookups O(1) if you want that later. 
+          AddOrder is O(capacity) because of the duplicate check. 
+          
+          -> Fix involves:
+          
+          √ Making PriceLevel aware of its oldest and newest order (time-priority)
+            - Add OldestOrderIndex and NewestOrderIndex to PriceLevel that points to the Orders array.
+          √ Making Order aware of its next newer and older order at the same price level
+            - Add NextNewerAtLevelIndex and NextOlderAtLevelIndex to Order that points to the order index
+              for the next newer order (in the same PriceLevel) and next older order (same level)
+          √ Adding or removing an order would require updating all four values to keep proper linkage       
     */
     
     private int _Capacity;
@@ -60,21 +59,34 @@ public class OrderCollection : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool GetOrder(long orderId, out Order foundOrder)
+    public ref Order GetOrder(long orderId)
     {
         int index = FindOrderIndex(orderId);
         if (index == -1)
-        {
-            foundOrder = _Orders[index];
-            return true;
-        }
-
-        foundOrder = default;
-        return false;
+            return ref Unsafe.NullRef<Order>();
+        
+        return ref _Orders[index];
     }
 
-    public int AddOrder(Order order)
+    public int AddOrder(Order order, ref PriceLevel priceLevel)
     {
+        /*
+         @@@ DONE @@@
+         
+        CLAUDE AI:
+        
+           _Orders[slot].NextAtLevel = -1;
+           _Orders[slot].PrevAtLevel = level.TailIndex;
+
+           if (level.TailIndex != -1)
+               _Orders[level.TailIndex].NextAtLevel = slot;
+           else
+               level.HeadIndex = slot;          // level was empty
+
+           level.TailIndex = slot;
+ 
+        */
+        
         if (_CountInUse < _Capacity)
         {
             int loopCount = 0;
@@ -92,6 +104,18 @@ public class OrderCollection : IDisposable
                 _Available[_LastIndex] = false;
                 _CountInUse++;
                 
+                // Update order time-sort indices
+                _Orders[_LastIndex].NextNewerAtLevelIndex = -1;
+                _Orders[_LastIndex].NextOlderAtLevelIndex = priceLevel.NewestOrderIndex;
+                
+                // Update relevant PriceLevel newest/oldest order indices at that level
+                if (priceLevel.NewestOrderIndex != -1)
+                    _Orders[priceLevel.NewestOrderIndex].NextOlderAtLevelIndex = _LastIndex;
+                else 
+                    priceLevel.OldestOrderIndex = _LastIndex;
+                
+                priceLevel.NewestOrderIndex = _LastIndex;
+                
                 return _LastIndex;
             }
         }
@@ -99,13 +123,47 @@ public class OrderCollection : IDisposable
         return -1;
     }
 
-    public bool RemoveOrder(ref Order order)
+    public bool RemoveOrder(ref readonly Order order, ref PriceLevel priceLevel)
     {
+        /*
+         @@@ DONE @@@
+         
+        CLAUDE AI:
+        
+           int prev = _Orders[slot].PrevAtLevel;
+           int next = _Orders[slot].NextAtLevel;
+
+           if (prev != -1) 
+               _Orders[prev].NextAtLevel = next;
+           else
+               level.HeadIndex = next;
+
+           if (next != -1) 
+               _Orders[next].PrevAtLevel = prev;
+           else
+               level.TailIndex = prev;
+        */
+        
         if (_CountInUse > 0)
         {
             int index = FindOrderIndex(order.OrderId);
             if (index != -1)
             {
+                // Update newer/older order index pointers for same price level
+                int olderIndex = _Orders[index].NextOlderAtLevelIndex;
+                int newerIndex = _Orders[index].NextNewerAtLevelIndex;
+                
+                if (olderIndex != -1)
+                    _Orders[olderIndex].NextNewerAtLevelIndex = newerIndex;
+                else 
+                    priceLevel.OldestOrderIndex = newerIndex;
+                
+                if (newerIndex != -1)
+                    _Orders[newerIndex].NextOlderAtLevelIndex = olderIndex;
+                else 
+                    priceLevel.NewestOrderIndex = olderIndex;
+                
+                // Clear it out and mark it's slot as available
                 _Orders[index].Clear();
                 _Available[index] = true;
                 _LastIndex = index - 1;
@@ -118,8 +176,8 @@ public class OrderCollection : IDisposable
         return false;
     }
 
-    public bool FindBestAtPriceLevel(ref PriceLevel priceLevel, ref PriceLevelCollection levels, 
-        OrderSide matchSide, out Order matchingOrder)
+    public ref Order FindBestAtPriceLevel(ref PriceLevel priceLevel, ref readonly PriceLevelCollection levels, 
+        OrderSide matchSide)
     {
         // Search for the next order by date/time and price (ask=search higher, bid=search lower)
         // * Use the PriceLevel.NextHigherIndex or PriceLevel.NextLowerIndex
@@ -128,7 +186,6 @@ public class OrderCollection : IDisposable
 
         PriceLevel nextLevel = priceLevel;
         int nextIndex;
-        bool wasFound;
 
         do
         {
@@ -138,23 +195,42 @@ public class OrderCollection : IDisposable
                 nextIndex = nextLevel.NextHigherIndex;
 
             if (nextIndex != -1)
-                wasFound = levels.GetPriceLevelByIndex(nextIndex, out nextLevel);
+                nextLevel = levels.GetPriceLevelByIndex(nextIndex);
             else
-                wasFound = false;
+                nextLevel = Unsafe.NullRef<PriceLevel>();
 
-        } while (wasFound && nextLevel.IsEmpty());
+        } while (!Unsafe.IsNullRef(ref nextLevel) && nextLevel.IsEmpty());
 
         if (nextIndex != -1)
-            return FindOldestOrderAtPriceLevel(nextIndex, out matchingOrder);
+            return ref FindOldestOrderAtPriceLevel(ref priceLevel);
         else
-        {
-            matchingOrder = default;
-            return false;
-        }
+            return ref Unsafe.NullRef<Order>();    
     }
 
-    private bool FindOldestOrderAtPriceLevel(int priceLevelIndex, out Order order)
+    private ref Order FindOldestOrderAtPriceLevel(ref readonly PriceLevel priceLevel)
     {
+        /*
+         @@@ DONE @@@
+         
+        CLAUDE AI:
+        
+            if (level.HeadIndex != -1)
+            {
+                order = _Orders[level.HeadIndex];
+                return true;
+            }
+            order = default;
+            return false;
+        */
+
+        if (priceLevel.OldestOrderIndex != -1)
+            return ref _Orders[priceLevel.OldestOrderIndex];
+         
+        return ref Unsafe.NullRef<Order>();
+        
+        /*
+        // OLD CODE:
+         
         long oldestTicks = DateTime.Now.Ticks;
         int oldestIndex = -1;
         
@@ -169,14 +245,10 @@ public class OrderCollection : IDisposable
             }
         }
 
-        if (oldestIndex != -1)
-        {
-            order = _Orders[oldestIndex];
-            return true;
-        }
-
-        order = default;
-        return false;
+        if (oldestIndex == -1)
+            return ref Unsafe.NullRef<Order>();
+        
+        return ref _Orders[oldestIndex];*/
     }
     
     public void Dispose()

@@ -54,13 +54,14 @@ public class OrderBookEngine : IDisposable
             // We keep looking for more orders to fill until our order is completed
             while (order.RemainingQuantity > 0)
             {
-                if (!_AskPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+                priceLevel = _AskPriceLevels.GetPriceLevelByPrice(price);
+                if (Unsafe.IsNullRef(ref priceLevel))
                 {
                     levelIndex = _AskPriceLevels.GetNextLowerPriceLevel(price);
                     if (levelIndex == -1)   // If no more orders are available, jump out of loop here
                         break;
 
-                    _AskPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                    priceLevel = _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
                     order.PriceLevelIndex = levelIndex;
                 }
 
@@ -77,13 +78,14 @@ public class OrderBookEngine : IDisposable
             // We keep looking for more orders to fill until our order is completed
             while (order.RemainingQuantity > 0)
             {
-                if (!_BidPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+                priceLevel = _BidPriceLevels.GetPriceLevelByPrice(price);
+                if (Unsafe.IsNullRef(ref priceLevel))
                 {
                     levelIndex = _BidPriceLevels.GetNextHigherPriceLevel(price);
                     if (levelIndex == -1)  // If no more orders are available, jump out of loop here
                         break;
 
-                    _BidPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                    priceLevel = _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
                     order.PriceLevelIndex = levelIndex;
                 }
                     
@@ -119,7 +121,8 @@ public class OrderBookEngine : IDisposable
         PriceLevel priceLevel;
         if (order.Side == OrderSide.Buy)
         {
-            if (!_BidPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+            priceLevel = _BidPriceLevels.GetPriceLevelByPrice(order.Price);
+            if (Unsafe.IsNullRef(ref priceLevel))
                 return OrderStatus.NotFound;
                 
             priceLevel.QuantityAvailable -= order.RemainingQuantity;
@@ -127,7 +130,8 @@ public class OrderBookEngine : IDisposable
         }
         else
         {
-            if (!_AskPriceLevels.GetPriceLevelByPrice(order.Price, out priceLevel))
+            priceLevel = _AskPriceLevels.GetPriceLevelByPrice(order.Price);
+            if (Unsafe.IsNullRef(ref priceLevel))
                 return OrderStatus.NotFound;
                 
             priceLevel.QuantityAvailable -= order.RemainingQuantity;
@@ -137,7 +141,7 @@ public class OrderBookEngine : IDisposable
         // Remove the order from the order list
         order.PriceLevelIndex = -1;
 
-        if (!_Orders.RemoveOrder(ref order))
+        if (!_Orders.RemoveOrder(ref order, ref priceLevel))
             return OrderStatus.Rejected;
         
         return OrderStatus.Canceled;
@@ -158,9 +162,6 @@ public class OrderBookEngine : IDisposable
     private OrderStatus ValidateOrder(ref Order order)
     {
         // Validate - Basic
-        if (order.FirmId <= 0)
-            return OrderStatus.Rejected;
-
         if (order.RemainingQuantity < 0)
             return OrderStatus.Rejected;
 
@@ -191,7 +192,8 @@ public class OrderBookEngine : IDisposable
         int quantity = order.RemainingQuantity;
 
         // Search the order list for the best available order by time-priority
-        if (_Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide, out matchedOrder))
+        matchedOrder = _Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide);
+        if (Unsafe.IsNullRef(ref matchedOrder))
         {
             if (matchedOrder.AccountId != order.AccountId && matchedOrder.RemainingQuantity > 0)
             {
@@ -222,10 +224,9 @@ public class OrderBookEngine : IDisposable
                 
                 // If the bestOrder was completely filled, it needs to be removed from the orderbook
                 if (matchedOrder.RemainingQuantity == 0)
-                    _Orders.RemoveOrder(ref matchedOrder);
+                    _Orders.RemoveOrder(ref matchedOrder, ref priceLevel);
             }
         }
-
     }
 
     private bool AddOrderToBook(ref Order order)
@@ -233,31 +234,33 @@ public class OrderBookEngine : IDisposable
         PriceLevel priceLevel;
         int levelIndex;
         long price = order.Price;
-
-        if (_Orders.AddOrder(order) == -1)
-            return false;
         
         if (order.Side == OrderSide.Buy)
         {
             // Find the matching price level or create it if not already found
-            if (!_BidPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+            priceLevel = _BidPriceLevels.GetPriceLevelByPrice(price);
+            if (Unsafe.IsNullRef(ref priceLevel))
             {
                 levelIndex = _BidPriceLevels.AddPriceLevel(price, order.Side);
-                _BidPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                priceLevel = _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
             }
         }
         else
         {
             // Find the matching price level or create it if not already found
-            if (!_AskPriceLevels.GetPriceLevelByPrice(price, out priceLevel))
+            priceLevel = _AskPriceLevels.GetPriceLevelByPrice(price);
+            if (Unsafe.IsNullRef(ref priceLevel))
             {
                 levelIndex = _AskPriceLevels.AddPriceLevel(price, order.Side);
-                _AskPriceLevels.GetPriceLevelByIndex(levelIndex, out priceLevel);
+                priceLevel = _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
             }
         }
 
         priceLevel.QuantityAvailable += order.RemainingQuantity;
         priceLevel.OrderCount++; 
+
+        if (_Orders.AddOrder(order, ref priceLevel) == -1)
+            return false;
 
         return true;
     }

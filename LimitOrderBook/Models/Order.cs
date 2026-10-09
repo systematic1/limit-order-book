@@ -14,9 +14,10 @@ public struct Order
     public int PriceLevelIndex;
     public long Timestamp;
     public TimeToLive TimeToLive;
-    public int FirmId;
     public long AccountId;
     public long SecurityId;
+    public int NextOlderAtLevelIndex = -1;
+    public int NextNewerAtLevelIndex = -1;
 
     public Order()
     {
@@ -24,7 +25,7 @@ public struct Order
 
     public void Init(long orderId, long price, OrderSide side, OrderType orderType, 
         int totalQuantity, int remainingQuantity, int priceLevelIndex, long timestamp, 
-        TimeToLive timeToLive, int firmId, long accountId, long securityId)
+        TimeToLive timeToLive, long accountId, long securityId)
     {
         OrderId = orderId;
         Price = price;
@@ -35,7 +36,6 @@ public struct Order
         PriceLevelIndex = priceLevelIndex;
         Timestamp = timestamp;
         TimeToLive = timeToLive;
-        FirmId = firmId;
         AccountId = accountId;
         SecurityId = securityId;
     }
@@ -44,13 +44,13 @@ public struct Order
     {
         Init(source.OrderId, source.Price, source.Side, source.OrderType, source.TotalQuantity,
             source.RemainingQuantity, source.PriceLevelIndex, source.Timestamp,
-            source.TimeToLive, source.FirmId, source.AccountId, source.SecurityId);
+            source.TimeToLive, source.AccountId, source.SecurityId);
     }
 
     public void Clear()
     {
         Init(0L, 0L, OrderSide.Buy, OrderType.Limit, 0,
-            0, -1, 0, TimeToLive.GoodTilCanceled,
-            -1, -1L, -1L);
+            0, -1, 0, TimeToLive.GoodTilCanceled, 
+            -1L, -1L);
     }
 }

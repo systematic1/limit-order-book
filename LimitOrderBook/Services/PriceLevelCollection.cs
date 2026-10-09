@@ -11,13 +11,13 @@ public class PriceLevelCollection : IDisposable
           so any match caused an infinite loop. They also tracked nearestHigherPrice and 
           nearestLowerPrice but never compared against them, so they returned the last match rather 
           than the nearest. They now return the nearest level.
-        - GetPriceLevelByPrice and RemovePriceLevel: both tested index == -1 where they needed != -1, 
+        √ GetPriceLevelByPrice and RemovePriceLevel: both tested index == -1 where they needed != -1, 
           the same inverted check as in OrderCollection.
-        - GetPriceLevelByIndex: it only succeeded for free slots (_Available[index] instead of 
+        √ GetPriceLevelByIndex: it only succeeded for free slots (_Available[index] instead of 
           !_Available[index]) and had no check for negative indexes.
         - AddPriceLevel:
-          * It used an unwrapped _LastIndex++.
-          * It wrote to _Levels[higherLevelLowerIndex] even when that index was -1.
+          √ It used an unwrapped _LastIndex++.
+          √ It wrote to _Levels[higherLevelLowerIndex] even when that index was -1.
           * When the new level became the top of the book, it never found the old top level, so that
             level was never linked to the new one. It now looks up the nearest lower level in that case.
        
@@ -33,6 +33,8 @@ public class PriceLevelCollection : IDisposable
         - Market orders: AddOrder assigns the result of GetNextHigherPriceLevel or GetNextLowerPriceLevel 
           to price, but those functions return an index, not a price. I described this earlier as a 
           “-1 sentinel”, which was imprecise. The fix is to look up the level at that index and use its Price.
+            >>>> This may have been solved by the other linkage changes
+            
         - Resting orders: AddOrderToBook stores the order in _Orders before its price level exists and never 
           sets order.PriceLevelIndex. FindOldestOrderAtPriceLevel matches on that field, so resting orders 
           will never be found for matching.
@@ -75,32 +77,22 @@ public class PriceLevelCollection : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool GetPriceLevelByPrice(long price, out PriceLevel foundLevel)
+    public ref PriceLevel GetPriceLevelByPrice(long price)
     {
         int index = FindLevelIndex(price);
         if (index == -1)
-        {
-            foundLevel = _Levels[index];
-            return true;
-        }
+            return ref Unsafe.NullRef<PriceLevel>();
 
-        foundLevel = default;
-        return false;
+        return ref _Levels[index];
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool GetPriceLevelByIndex(int index, out PriceLevel foundLevel)
+    public ref PriceLevel GetPriceLevelByIndex(int index)
     {
-        if (index < _Capacity && _Available[index])
-        {
-            foundLevel = _Levels[index];
-            return true;
-        }
+        if (index >= 0 && index < _Capacity && !_Available[index])
+            return ref _Levels[index];
         else
-        {
-            foundLevel = default;
-            return false;
-        }
+            return ref Unsafe.NullRef<PriceLevel>();
     }
 
     public int GetNextHigherPriceLevel(long price)
@@ -149,7 +141,7 @@ public class PriceLevelCollection : IDisposable
 
             // 3. Insert a new price level [NewLevel] and link HigherLevel.NextLowerIndex to its index
             int loopCount = 0;
-            _LastIndex++;
+            _LastIndex = (_LastIndex + 1) & (_Capacity - 1);
 
             while (!_Available[_LastIndex] && loopCount < _Capacity)
             {
@@ -168,11 +160,10 @@ public class PriceLevelCollection : IDisposable
                 _Levels[_LastIndex].NextLowerIndex = higherLevelLowerIndex;
                 _Levels[_LastIndex].NextHigherIndex = nextHigherIndex;
                 
-                if (nextHigherIndex != -1)
-                {
+                if (nextHigherIndex > -1)
                     _Levels[nextHigherIndex].NextLowerIndex = _LastIndex;
+                if (higherLevelLowerIndex > -1)
                     _Levels[higherLevelLowerIndex].NextHigherIndex = _LastIndex;
-                }
 
                 // 6. Mark NewLevel's AvailableIndex as 0 and increment CountInUse
                 _Available[_LastIndex] = false;
@@ -191,7 +182,7 @@ public class PriceLevelCollection : IDisposable
         {
             // 1. Find the price level for the given price [CurrentLevel]; return false if it doesn't exist
             int index = FindLevelIndex(price);
-            if (index == -1)
+            if (index != -1)
             {
                 // 2. Link the HigherLevel.NextLowerIndex to LowerLevel index
                 int nextHigherIndex = _Levels[index].NextHigherIndex;

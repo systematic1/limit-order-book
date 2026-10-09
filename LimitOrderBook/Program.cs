@@ -122,7 +122,7 @@ class Program : IDisposable
                     
                     // Convert the char array to an Order object
                     // The format of the char buffer data is:
-                    //  <ORDER-ID>|<REQ-TYPE>|<ORDER-TYPE>|<PRICE>|<SIDE>|<QTY>|<FIRM-ID>|<ACCT-ID>|<SECURITY-ID>|<SENT-TIME>
+                    //  <ORDER-ID>|<REQ-TYPE>|<ORDER-TYPE>|<PRICE>|<SIDE>|<QTY>|<ACCT-ID>|<SECURITY-ID>|<SENT-TIME>
 
                     // Detail descriptions:
                     //  <REQ-TYPE> is "A" for add new order or "C" for cancel existing order
@@ -133,9 +133,9 @@ class Program : IDisposable
                     // All -ID fields are integers (not alphanumeric)
 
                     // Examples:
-                    //  1234567890123|A|L|1235000|B|200|99887766|98765432109|1384|4652763476576474
-                    //  2345678901234|C|L|140000|S|50|99887766|98765432109|417|4673899928307501
-                    //  3456789012345|A|B|0|M|100|99887766|98765432109|1638|4678277000145185
+                    //  1234567890123|A|L|1235000|B|200|98765432109|1384|4652763476576474
+                    //  2345678901234|C|L|140000|S|50|98765432109|417|4673899928307501
+                    //  3456789012345|A|B|0|M|100|98765432109|1638|4678277000145185
  
                     if (buffer.Length > 0)
                     {
@@ -150,7 +150,7 @@ class Program : IDisposable
                         Console.Write("-- Received data:  ");
                         Console.WriteLine(charBuffer.AsSpan());
                         
-                        while (lastPosition < length && fieldNumber < 10)
+                        while (lastPosition < length && fieldNumber < 9)
                         {
                             ReadOnlySequence<byte> seqSlice = buffer.Slice(lastPosition, length);
                             SequencePosition? seqPosition = seqSlice.PositionOf(separator);
@@ -216,27 +216,20 @@ class Program : IDisposable
                                     break;
 
                                 case 6:
-                                    // Firm-ID (int)
-                                    if (!Int32.TryParse(utf8Buffer, out tempInt))
-                                        throw new FormatException("Firm-ID must be 32-bit integer");
-                                    newOrder.FirmId = tempInt;
-                                    break;
-
-                                case 7:
                                     // Acct-ID (long)
                                     if (!Int64.TryParse(utf8Buffer, out tempLong))
                                         throw new FormatException("Account-ID must be 64-bit integer");
                                     newOrder.AccountId = tempLong;
                                     break;
 
-                                case 8:
+                                case 7:
                                     // Security-ID (long)
                                     if (!Int64.TryParse(utf8Buffer, out tempLong))
                                         throw new FormatException("Security-ID must be 64-bit integer");
                                     newOrder.SecurityId = tempLong;
                                     break;
 
-                                case 9:
+                                case 8:
                                     // Sent-Time (long)
                                     if (!Int64.TryParse(utf8Buffer, out tempLong))
                                         throw new FormatException("Sent-Time must be 64-bit integer");

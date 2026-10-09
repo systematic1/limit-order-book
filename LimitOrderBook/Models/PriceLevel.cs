@@ -14,6 +14,8 @@ public struct PriceLevel
 
     public int NextHigherIndex = -1;
     public int NextLowerIndex = -1;
+    public int OldestOrderIndex = -1;
+    public int NewestOrderIndex = -1;
 
     public PriceLevel()
     {
