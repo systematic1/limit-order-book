@@ -6,6 +6,23 @@ namespace LimitOrderBook.Services;
 
 public class OrderCollection : IDisposable
 {
+    /*
+     CLAUDE.AI:
+     
+        - GetOrder and RemoveOrder: both tested index == -1 where they needed != -1. In C# 
+          they threw IndexOutOfRangeException whenever they ran.
+        - AddOrder: it did a plain _LastIndex++, which runs past the end of the array once
+          _LastIndex reaches _Capacity - 1. It now wraps with the same mask the loop uses.
+        - In C# the out Order was a copy if Order is a struct, which meant the engine’s updates 
+          to the matched order’s RemainingQuantity would never reach the book.   
+          
+        SUGGESTIONS
+        
+        - FindOrderIndex and FindOldestOrderAtPriceLevel scan the whole array linearly, so every 
+          AddOrder is O(capacity) because of the duplicate check. I kept the original design. An 
+          unordered_map<orderId, index> (C++) would make the lookups O(1) if you want that later. 
+    */
+    
     private int _Capacity;
     private Order[] _Orders;
     private bool[] _Available;
@@ -61,7 +78,7 @@ public class OrderCollection : IDisposable
         if (_CountInUse < _Capacity)
         {
             int loopCount = 0;
-            _LastIndex++;
+            _LastIndex = (_LastIndex + 1) & (_Capacity - 1);
 
             while (!_Available[_LastIndex] && loopCount < _Capacity)
             {
@@ -87,7 +104,7 @@ public class OrderCollection : IDisposable
         if (_CountInUse > 0)
         {
             int index = FindOrderIndex(order.OrderId);
-            if (index == -1)
+            if (index != -1)
             {
                 _Orders[index].Clear();
                 _Available[index] = true;

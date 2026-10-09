@@ -6,6 +6,38 @@ namespace LimitOrderBook.Services;
 
 public class PriceLevelCollection : IDisposable
 {
+    /*
+        - GetNextHigherPriceLevel and GetNextLowerPriceLevel: both used while where they needed if, 
+          so any match caused an infinite loop. They also tracked nearestHigherPrice and 
+          nearestLowerPrice but never compared against them, so they returned the last match rather 
+          than the nearest. They now return the nearest level.
+        - GetPriceLevelByPrice and RemovePriceLevel: both tested index == -1 where they needed != -1, 
+          the same inverted check as in OrderCollection.
+        - GetPriceLevelByIndex: it only succeeded for free slots (_Available[index] instead of 
+          !_Available[index]) and had no check for negative indexes.
+        - AddPriceLevel:
+          * It used an unwrapped _LastIndex++.
+          * It wrote to _Levels[higherLevelLowerIndex] even when that index was -1.
+          * When the new level became the top of the book, it never found the old top level, so that
+            level was never linked to the new one. It now looks up the nearest lower level in that case.
+       
+        The ownership and error-handling changes follow the same pattern as OrderCollection. Lookups 
+        return pointers into the stored levels, which is what lets the engine update QuantityAvailable 
+        and OrderCount on the real level. ArrayPool becomes std::vector, and the exception becomes 
+        std::invalid_argument.
+       
+        - Bugs in the engine
+       
+        Seeing how the collections behave exposed two engine bugs. I left both unchanged:
+       
+        - Market orders: AddOrder assigns the result of GetNextHigherPriceLevel or GetNextLowerPriceLevel 
+          to price, but those functions return an index, not a price. I described this earlier as a 
+          “-1 sentinel”, which was imprecise. The fix is to look up the level at that index and use its Price.
+        - Resting orders: AddOrderToBook stores the order in _Orders before its price level exists and never 
+          sets order.PriceLevelIndex. FindOldestOrderAtPriceLevel matches on that field, so resting orders 
+          will never be found for matching.
+    */
+    
     private int _Capacity;
     private PriceLevel[] _Levels;
     private bool[] _Available;

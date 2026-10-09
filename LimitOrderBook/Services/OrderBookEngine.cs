@@ -6,6 +6,21 @@ namespace LimitOrderBook.Services;
 
 public class OrderBookEngine : IDisposable
 {
+    /*
+
+    - Make ref struct parameter types readonly [const] by prefixing with "in" or "ref readonly"
+
+    CLAUDE.AI OBSERVATIONS / SUGGESTIONS:
+
+    - AddOrder’s while loop can spin forever. FillMatchingOrder does nothing when the best match
+      has the same AccountId, and then the loop retries the same level.
+    - A partial fill sets matchedStatus = Filled. It probably should be PartiallyFilled.
+    - CancelOrder uses the caller’s order.Price and RemainingQuantity rather than the stored
+      order’s values. A stale or incorrect order object would corrupt the level totals.
+    - In AddOrder, the market-order starting price can be the -1 sentinel for an empty book.
+
+    */
+
     private OrderCollection _Orders;
     private PriceLevelCollection _AskPriceLevels;
     private PriceLevelCollection _BidPriceLevels;

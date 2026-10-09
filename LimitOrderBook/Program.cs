@@ -10,6 +10,37 @@ namespace LimitOrderBook;
 
 class Program : IDisposable
 {
+    /*
+       The original parsing code could not work, so I rewrote it to follow the documented format, with 
+       the same field order, validation and error messages:
+       
+       - Field slicing: buffer.Slice(lastPosition, splitPosition) passes an end position where a length 
+         is expected, so every field after the first was too long.
+       - Parsing: each field was parsed from a 100-byte zero-padded buffer, which TryParse rejects. Fields 
+         are now parsed with std::from_chars and must be fully numeric.
+       - PipeReader: reader.AdvanceTo was never called, so the second ReadAsync would throw.
+       - Fresh order per message: the original reused one Order, so values from the previous message could 
+         leak into the next. Each message now gets a new Order.
+       - RemainingQuantity: I set it to TotalQuantity after parsing. Nothing in the original set it, so every 
+         add would have been reported as Filled without matching, and CancelOrder would have subtracted 0 
+         from the level.
+       - Framing: like the original, each read is one message. If the client sends newline-terminated messages, 
+         several per read also work. A message split across reads would still break, so the real fix is a 
+         terminator or length prefix in the protocol.
+       - Cleanup: the ArrayPool warm-up in the constructor did nothing, so I dropped it. A malformed message 
+         still logs and stops the server, as in the original.
+       
+       Things to check when you port the models
+       
+       - If Order has a member named OrderType of type OrderType, as in the C#, GCC and Clang report “changes 
+         meaning of ‘OrderType’”. Write enum OrderType OrderType;, or rename the member.
+       - OrderStatus, OrderSide and OrderType are used unqualified in namespace LimitOrderBook and 
+         LimitOrderBook::Services. If your Models.h puts them in LimitOrderBook::Models, add a using namespace 
+         for it.
+       - The third example in the original comment (3456789012345|A|B|0|M|...) has order type and side swapped 
+         relative to the documented format. It would fail validation, so I left it out of the comment.    
+    */
+    
     private OrderBookEngine _Engine = new OrderBookEngine(1024, 256);
      
     static async Task Main(string[] args)
