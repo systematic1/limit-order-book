@@ -17,8 +17,8 @@ public struct Order
     public long AccountId;
     public long SecurityId;
     
-    public int NextOlderAtLevelIndex = -1;
-    public int NextNewerAtLevelIndex = -1;
+    public int NextOlderOrderIndexAtLevel = -1;
+    public int NextNewerOrderIndexAtLevel = -1;
 
     public Order()
     {

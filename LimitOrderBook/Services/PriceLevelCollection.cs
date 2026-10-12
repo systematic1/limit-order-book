@@ -40,8 +40,8 @@ public class PriceLevelCollection : IDisposable
           will never be found for matching.
     */
     
-    private int _Capacity;
-    private int _CapacityMask;
+    private readonly int _Capacity;
+    private readonly int _CapacityMask;
     private PriceLevel[] _Levels;
     private bool[] _Available;
     private int _CountInUse;
@@ -49,8 +49,8 @@ public class PriceLevelCollection : IDisposable
 
     public PriceLevelCollection(int capacityPowerOf2)
     {
-        if ((capacityPowerOf2 & (capacityPowerOf2 - 1)) != 0) 
-            throw new ArgumentOutOfRangeException($"The {nameof(capacityPowerOf2)} parameter must be a power of 2.");
+        if (capacityPowerOf2 > 0 && (capacityPowerOf2 & (capacityPowerOf2 - 1)) != 0) 
+            throw new ArgumentException($"The {nameof(capacityPowerOf2)} parameter must be a power of 2.");
         
         _Capacity = capacityPowerOf2;
         _CapacityMask = _Capacity - 1;
@@ -139,7 +139,7 @@ public class PriceLevelCollection : IDisposable
             int nextHigherIndex = GetNextHigherPriceLevel(price); 
 
             // 2. Save the price level index from HigherLevel.NextLowerIndex [LowerLevel]
-            int higherLevelLowerIndex = (nextHigherIndex == -1 ? -1 : _Levels[nextHigherIndex].NextLowerIndex);
+            int higherLevelLowerIndex = (nextHigherIndex == -1 ? -1 : _Levels[nextHigherIndex].NextLowerLevelIndex);
 
             // 3. Insert a new price level [NewLevel] and link HigherLevel.NextLowerIndex to its index
             int loopCount = 0;
@@ -159,13 +159,13 @@ public class PriceLevelCollection : IDisposable
 
                 // 5. Link NewLevel.NextHigherIndex to HigherLevel, and link NewLevel.NextLowerIndex to LowerLevel
                 // Link LowerLevel.NextHigherIndex to NewLevel
-                _Levels[_LastIndex].NextLowerIndex = higherLevelLowerIndex;
-                _Levels[_LastIndex].NextHigherIndex = nextHigherIndex;
+                _Levels[_LastIndex].NextLowerLevelIndex = higherLevelLowerIndex;
+                _Levels[_LastIndex].NextHigherLevelIndex = nextHigherIndex;
                 
                 if (nextHigherIndex > -1)
-                    _Levels[nextHigherIndex].NextLowerIndex = _LastIndex;
+                    _Levels[nextHigherIndex].NextLowerLevelIndex = _LastIndex;
                 if (higherLevelLowerIndex > -1)
-                    _Levels[higherLevelLowerIndex].NextHigherIndex = _LastIndex;
+                    _Levels[higherLevelLowerIndex].NextHigherLevelIndex = _LastIndex;
 
                 // 6. Mark NewLevel's AvailableIndex as 0 and increment CountInUse
                 _Available[_LastIndex] = false;
@@ -187,15 +187,15 @@ public class PriceLevelCollection : IDisposable
             if (index != -1)
             {
                 // 2. Link the HigherLevel.NextLowerIndex to LowerLevel index
-                int nextHigherIndex = _Levels[index].NextHigherIndex;
-                int nextLowerIndex = _Levels[index].NextLowerIndex;
+                int nextHigherIndex = _Levels[index].NextHigherLevelIndex;
+                int nextLowerIndex = _Levels[index].NextLowerLevelIndex;
                 
                 if (nextHigherIndex != -1)
-                    _Levels[nextHigherIndex].NextLowerIndex = nextLowerIndex;
+                    _Levels[nextHigherIndex].NextLowerLevelIndex = nextLowerIndex;
                 
                 // 3. Link the LowerLevel.NextHigherIndex to HigherLevel index
                 if (nextLowerIndex != -1)
-                    _Levels[nextLowerIndex].NextHigherIndex = nextHigherIndex;
+                    _Levels[nextLowerIndex].NextHigherLevelIndex = nextHigherIndex;
 
                 // 4. Clear the CurrentLevel item content
                 _Levels[index].Clear();

@@ -12,8 +12,8 @@ public struct PriceLevel
     public long LastFillQuantity;
     public long LastFillTimestamp;
 
-    public int NextHigherIndex = -1;
-    public int NextLowerIndex = -1;
+    public int NextHigherLevelIndex = -1;
+    public int NextLowerLevelIndex = -1;
     public int OldestOrderIndex = -1;
     public int NewestOrderIndex = -1;
 
