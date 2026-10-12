@@ -16,6 +16,7 @@ public struct Order
     public TimeToLive TimeToLive;
     public long AccountId;
     public long SecurityId;
+    
     public int NextOlderAtLevelIndex = -1;
     public int NextNewerAtLevelIndex = -1;
 
