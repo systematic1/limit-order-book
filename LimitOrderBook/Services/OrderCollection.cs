@@ -7,11 +7,6 @@ namespace LimitOrderBook.Services;
 public class OrderCollection : IDisposable
 {
     /*
-       [-] <This requires allocating memory at RT> FindOrderIndex is O(n), and RemoveOrder calls it. That undermines the O(1) linked-list design. Use an orderId → slot dictionary or an open-addressing hash. AggressiveInlining on a loop does nothing useful.
-       [-] _LastIndex slot hunting is O(n) worst case and fragile. A free-list stack gives O(1) allocation and removes the index-minus-one trap.
-       [-] RemoveOrder takes an Order just to re-search by ID. Accept the slot index and avoid the second lookup.
-       [-] Slot handles can go stale. A reused slot (the ABA problem) lets an old handle point at a new order. Consider a generation counter in the handle.
-       [-] Unsafe.NullRef as a “not found” signal is a footgun. Callers must remember Unsafe.IsNullRef. A bool TryGet(out ...) or an index return is safer.
        [ ] The class has no thread-safety note, and it exposes no Count or Capacity.
             [ ] Use "Interlocked.Increment" and "Interlocked.CompareAndExchange"
     */

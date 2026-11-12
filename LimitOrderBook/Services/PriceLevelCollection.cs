@@ -6,40 +6,6 @@ namespace LimitOrderBook.Services;
 
 public class PriceLevelCollection : IDisposable
 {
-    /*
-        [ ] GetNextHigherPriceLevel and GetNextLowerPriceLevel: both used while where they needed if, 
-            so any match caused an infinite loop. They also tracked nearestHigherPrice and 
-            nearestLowerPrice but never compared against them, so they returned the last match rather 
-            than the nearest. They now return the nearest level.
-        [√] GetPriceLevelByPrice and RemovePriceLevel: both tested index == -1 where they needed != -1, 
-            the same inverted check as in OrderCollection.
-        [√] GetPriceLevelByIndex: it only succeeded for free slots (_Available[index] instead of 
-            !_Available[index]) and had no check for negative indexes.
-        [ ] AddPriceLevel:
-          [√] It used an unwrapped _LastIndex++.
-          [√] It wrote to _Levels[higherLevelLowerIndex] even when that index was -1.
-          [ ] When the new level became the top of the book, it never found the old top level, so that
-              level was never linked to the new one. It now looks up the nearest lower level in that case.
-       
-        The ownership and error-handling changes follow the same pattern as OrderCollection. Lookups 
-        return pointers into the stored levels, which is what lets the engine update QuantityAvailable 
-        and OrderCount on the real level. ArrayPool becomes std::vector, and the exception becomes 
-        std::invalid_argument.
-       
-        - Bugs in the engine
-       
-        Seeing how the collections behave exposed two engine bugs. I left both unchanged:
-       
-        - Market orders: AddOrder assigns the result of GetNextHigherPriceLevel or GetNextLowerPriceLevel 
-          to price, but those functions return an index, not a price. I described this earlier as a 
-          “-1 sentinel”, which was imprecise. The fix is to look up the level at that index and use its Price.
-            >>>> This may have been solved by the other linkage changes
-            
-        - Resting orders: AddOrderToBook stores the order in _Orders before its price level exists and never 
-          sets order.PriceLevelIndex. FindOldestOrderAtPriceLevel matches on that field, so resting orders 
-          will never be found for matching.
-    */
-    
     private readonly int _Capacity;
     private readonly int _CapacityMask;
     private PriceLevel[] _Levels;
@@ -58,7 +24,7 @@ public class PriceLevelCollection : IDisposable
         _LastIndex = 0;
         
         // Pre-allocate the pool and set available indices values to 1
-        _Levels = ArrayPool<PriceLevel>.Shared.Rent(_Capacity);
+        _Levels = new PriceLevel[_Capacity];
         _Available = new bool[_Capacity];
         Array.Fill<bool>(_Available, true);
     }
@@ -79,9 +45,9 @@ public class PriceLevelCollection : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref PriceLevel GetPriceLevelByPrice(long price)
+    public ref PriceLevel GetPriceLevelByPrice(long price, out int index)
     {
-        int index = FindLevelIndex(price);
+        index = FindLevelIndex(price);
         if (index == -1)
             return ref Unsafe.NullRef<PriceLevel>();
 
@@ -139,33 +105,35 @@ public class PriceLevelCollection : IDisposable
             int nextHigherIndex = GetNextHigherPriceLevel(price); 
 
             // 2. Save the price level index from HigherLevel.NextLowerIndex [LowerLevel]
-            int higherLevelLowerIndex = (nextHigherIndex == -1 ? -1 : _Levels[nextHigherIndex].NextLowerLevelIndex);
-
+            int higherLevel_LowerIndex = (nextHigherIndex == -1 ? -1 : _Levels[nextHigherIndex].NextLowerLevelIndex);
+            
             // 3. Insert a new price level [NewLevel] and link HigherLevel.NextLowerIndex to its index
             int loopCount = 0;
+            int searchIndex = _LastIndex;
 
-            while (!_Available[_LastIndex] && loopCount < _Capacity)
+            while (!_Available[searchIndex] && loopCount < _Capacity)
             {
-                IncrementLastIndex();
+                searchIndex = (searchIndex + 1) & _CapacityMask;
                 loopCount++;
             }
-
+            
             // 4. If an available slot was found, use it and mark it as used
             if (loopCount < _Capacity)
             {
+                _LastIndex = searchIndex;
                 _Levels[_LastIndex].Clear();
                 _Levels[_LastIndex].Price = price;
                 _Levels[_LastIndex].Side = side;
 
                 // 5. Link NewLevel.NextHigherIndex to HigherLevel, and link NewLevel.NextLowerIndex to LowerLevel
                 // Link LowerLevel.NextHigherIndex to NewLevel
-                _Levels[_LastIndex].NextLowerLevelIndex = higherLevelLowerIndex;
+                _Levels[_LastIndex].NextLowerLevelIndex = higherLevel_LowerIndex;
                 _Levels[_LastIndex].NextHigherLevelIndex = nextHigherIndex;
                 
                 if (nextHigherIndex > -1)
                     _Levels[nextHigherIndex].NextLowerLevelIndex = _LastIndex;
-                if (higherLevelLowerIndex > -1)
-                    _Levels[higherLevelLowerIndex].NextHigherLevelIndex = _LastIndex;
+                if (higherLevel_LowerIndex > -1)
+                    _Levels[higherLevel_LowerIndex].NextHigherLevelIndex = _LastIndex;
 
                 // 6. Mark NewLevel's AvailableIndex as 0 and increment CountInUse
                 _Available[_LastIndex] = false;
@@ -200,7 +168,7 @@ public class PriceLevelCollection : IDisposable
                 // 4. Clear the CurrentLevel item content
                 _Levels[index].Clear();
 
-                // 5. Mark NewLevel's AvailableIndex as 1 and decrement CountInUse
+                // 5. Mark NewLevel's AvailableIndex as true and decrement CountInUse
                 _Available[index] = true;
                 _LastIndex = index;
                 _CountInUse--;
@@ -212,11 +180,8 @@ public class PriceLevelCollection : IDisposable
         return false;
     }
     
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void IncrementLastIndex() => _LastIndex = (_LastIndex + 1) & _CapacityMask;
-    
     public void Dispose()
     {
-        ArrayPool<PriceLevel>.Shared.Return(_Levels);
+        _Levels = null;
     }
 }
