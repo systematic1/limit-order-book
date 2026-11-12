@@ -45,9 +45,9 @@ public class PriceLevelCollection : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ref PriceLevel GetPriceLevelByPrice(long price, out int index)
+    public ref PriceLevel GetPriceLevelByPrice(long price)
     {
-        index = FindLevelIndex(price);
+        int index = FindLevelIndex(price);
         if (index == -1)
             return ref Unsafe.NullRef<PriceLevel>();
 

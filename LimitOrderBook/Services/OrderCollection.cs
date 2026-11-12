@@ -6,11 +6,6 @@ namespace LimitOrderBook.Services;
 
 public class OrderCollection : IDisposable
 {
-    /*
-       [ ] The class has no thread-safety note, and it exposes no Count or Capacity.
-            [ ] Use "Interlocked.Increment" and "Interlocked.CompareAndExchange"
-    */
-    
     private readonly int _Capacity;
     private readonly int _CapacityMask;
     private Order[] _Orders;

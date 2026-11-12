@@ -77,7 +77,7 @@ class Program
 
             await SubmitOrder(newOrderId, side, price, quantity, action, orderType, writer);
             
-            Console.WriteLine($" * [{index}] Sent Order: {action} ({orderType}) --> {side} ${price} {quantity}");
+            Console.WriteLine($" * [{index}] Sent Order #{newOrderId}: {action} ({orderType}) --> {side} : ${Math.Round(price * 100.0) / 100.0} : {quantity}");
         }
         
         Console.WriteLine();
