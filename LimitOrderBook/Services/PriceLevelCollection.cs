@@ -87,7 +87,7 @@ public class PriceLevelCollection : IDisposable
 
         return ref _Levels[index];
     }
-
+    
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref PriceLevel GetPriceLevelByIndex(int index)
     {

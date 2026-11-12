@@ -34,7 +34,7 @@ public class OrderBookEngine : IDisposable
 
     public OrderStatus AddOrder(ref Order order)
     {
-        PriceLevel priceLevel;
+        ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
         int levelIndex;
         int quantityFilled = 1; // Set to 1 so it will enter the while loop the first time
         long price = order.Price;
@@ -59,14 +59,14 @@ public class OrderBookEngine : IDisposable
             // We keep looking for more orders to fill until our order is completed
             while (order.RemainingQuantity > 0 && quantityFilled > 0)
             {
-                priceLevel = _AskPriceLevels.GetPriceLevelByPrice(price);
+                priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
                 {
                     levelIndex = _AskPriceLevels.GetNextLowerPriceLevel(price);
                     if (levelIndex == -1)   // If no more orders are available, jump out of loop here
                         break;
 
-                    priceLevel = _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
+                    priceLevel = ref _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
                 }
 
                 // Find a matching order and fill it
@@ -86,14 +86,14 @@ public class OrderBookEngine : IDisposable
             // We keep looking for more orders to fill until our order is completed
             while (order.RemainingQuantity > 0 && quantityFilled > 0)
             {
-                priceLevel = _BidPriceLevels.GetPriceLevelByPrice(price);
+                priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
                 {
                     levelIndex = _BidPriceLevels.GetNextHigherPriceLevel(price);
                     if (levelIndex == -1)  // If no more orders are available, jump out of loop here
                         break;
 
-                    priceLevel = _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
+                    priceLevel = ref _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
                     order.PriceLevelIndex = levelIndex;
                 }
                     
@@ -121,16 +121,16 @@ public class OrderBookEngine : IDisposable
         if (status != OrderStatus.Unknown)
             return status;
         
-        Order storedOrderRef = _Orders.GetOrder(order.OrderId);
+        ref Order storedOrderRef = ref _Orders.GetOrder(order.OrderId);
         if (Unsafe.IsNullRef(ref storedOrderRef))
             return OrderStatus.NotFound;
 
         // Find the price level and adjust the quantity remaining and order count
-        PriceLevel priceLevel;
+        ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
         if (storedOrderRef.Side == OrderSide.Buy)
-            priceLevel = _BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);
+            priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);    // Is this correct collection?
         else
-            priceLevel = _AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);
+            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);    // Is this correct collection?
 
         if (Unsafe.IsNullRef(ref priceLevel))
             return OrderStatus.NotFound;
@@ -185,7 +185,6 @@ public class OrderBookEngine : IDisposable
 
     private int FillMatchingOrder(ref PriceLevel priceLevel, ref Order order)
     {
-        Order matchedOrder;
         OrderSide matchSide = (order.Side == OrderSide.Sell ? OrderSide.Buy : OrderSide.Sell);
         OrderStatus matchedStatus = default;
         PriceLevelCollection priceLevels = (order.Side == OrderSide.Sell ? _BidPriceLevels : _AskPriceLevels);
@@ -193,7 +192,7 @@ public class OrderBookEngine : IDisposable
         int quantityFilled = 0;
 
         // Search the order list for the best available order by time-priority
-        matchedOrder = _Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide);
+        ref Order matchedOrder = ref _Orders.FindBestAtPriceLevel(ref priceLevel, ref priceLevels, matchSide);
         if (!Unsafe.IsNullRef(ref matchedOrder))
         {
             if (matchedOrder.AccountId != order.AccountId && matchedOrder.RemainingQuantity > 0)
@@ -236,20 +235,39 @@ public class OrderBookEngine : IDisposable
 
     private bool AddOrderToBook(ref Order order)
     {
-        PriceLevel priceLevel;
+        ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
         int levelIndex;
         long price = order.Price;
-        
-        if (order.Side == OrderSide.Buy)
-            priceLevel = _BidPriceLevels.GetPriceLevelByPrice(order.Price);
-        else
-            priceLevel = _AskPriceLevels.GetPriceLevelByPrice(order.Price);
 
-        // If the price level doesn't exist, add it to the price levels
-        if (Unsafe.IsNullRef(ref priceLevel))
+        if (order.Side == OrderSide.Buy)
         {
-            levelIndex = _BidPriceLevels.AddPriceLevel(price, order.Side);
-            priceLevel = _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
+            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(order.Price);
+            
+            // If the price level doesn't exist, add it to the price levels
+            if (Unsafe.IsNullRef(ref priceLevel))
+            {
+                levelIndex = _AskPriceLevels.AddPriceLevel(price, order.Side);
+                if (levelIndex == -1)
+                    return false;
+                
+                priceLevel = ref _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
+                order.PriceLevelIndex = levelIndex;
+            }
+        }
+        else
+        {
+            priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(order.Price);
+            
+            // If the price level doesn't exist, add it to the price levels
+            if (Unsafe.IsNullRef(ref priceLevel))
+            {
+                levelIndex = _BidPriceLevels.AddPriceLevel(price, order.Side);
+                if (levelIndex == -1)
+                    return false;
+                
+                priceLevel = ref _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
+                order.PriceLevelIndex = levelIndex;
+            }
         }
 
         priceLevel.QuantityAvailable += order.RemainingQuantity;

@@ -10,31 +10,6 @@ namespace LimitOrderBook;
 
 class Program : IDisposable
 {
-    /*
-       The original parsing code could not work, so I rewrote it to follow the documented format, with 
-       the same field order, validation and error messages:
-       
-       [√] Field slicing: buffer.Slice(lastPosition, splitPosition) passes an end position where a length 
-           is expected, so every field after the first was too long.
-       [√] Parsing: each field was parsed from a 100-byte zero-padded buffer, which TryParse rejects. Use AsSpan()
-       [√] PipeReader: reader.AdvanceTo was never called, so the second ReadAsync would throw.
-           Fresh order per message: the original reused one Order, so values from the previous message could 
-           leak into the next. Each message now gets a new Order.
-       [ ] RemainingQuantity: I set it to TotalQuantity after parsing. Nothing in the original set it, so every 
-           add would have been reported as Filled without matching, and CancelOrder would have subtracted 0 
-           from the level.
-       [√] Framing: like the original, each read is one message. If the client sends newline-terminated messages, 
-           several per read also work. A message split across reads would still break, so the real fix is a 
-           terminator or length prefix in the protocol.
-       [√] Cleanup: the ArrayPool warm-up in the constructor did nothing, so I dropped it. A malformed message 
-           still logs and stops the server, as in the original.
-       
-       Things to check when you port the models
-       
-       [√] The third example in the original comment (3456789012345|A|B|0|M|...) has order type and side swapped 
-           relative to the documented format. It would fail validation, so I left it out of the comment.    
-    */
-    
     private OrderBookEngine _Engine = new OrderBookEngine(1024, 256);
      
     static async Task Main(string[] args)
@@ -43,7 +18,7 @@ class Program : IDisposable
         var instance = new Program();
         Console.WriteLine("Limit Order Book Engine - Running...");
         Console.WriteLine("Press Ctrl+C to exit...");
-        Console.WriteLine("====================================");
+        Console.WriteLine("===========================================================================");
 
         Console.CancelKeyPress += (sender, eventArgs) =>
         {
@@ -57,7 +32,7 @@ class Program : IDisposable
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine("====================================");
+            Console.WriteLine("=======================================================================");
             Console.WriteLine("Finished processing.");
         }
     }
@@ -105,9 +80,12 @@ class Program : IDisposable
                 // Create an order from the listener input data buffer
 
                 var reader = PipeReader.Create(pipeServer, new StreamPipeReaderOptions(leaveOpen: true, bufferSize: 256));
+                Console.WriteLine("Created PipeServer.");
 
                 while (!ct.IsCancellationRequested && pipeServer.IsConnected)
                 {
+                    Console.WriteLine("Server is connected and listening.");
+                    
                     readResult = await reader.ReadAsync(ct);
                     ReadOnlySequence<byte> buffer = readResult.Buffer;
                     fieldNumber = 0;
@@ -129,7 +107,7 @@ class Program : IDisposable
                     // Examples:
                     //  1234567890123|A|L|1235000|B|200|98765432109|1384|4652763476576474
                     //  2345678901234|C|L|140000|S|50|98765432109|417|4673899928307501
-                    //  3456789012345|A|B|0|M|100|98765432109|1638|4678277000145185
+                    //  3456789012345|A|M|0|B|100|98765432109|1638|4678277000145185
  
                     if (buffer.Length > 0)
                     {
@@ -242,10 +220,12 @@ class Program : IDisposable
                         switch (requestType)
                         {
                             case 'A':
+                                Console.WriteLine($"Adding order: {newOrder.OrderId}, {newOrder.Price}, {newOrder.TotalQuantity}, {newOrder.OrderType}");
                                 status = _Engine.AddOrder(ref newOrder);
                                 break;
                             
                             case 'C':
+                                Console.WriteLine($"Canceling order: {newOrder.OrderId}");
                                 status = _Engine.CancelOrder(ref newOrder);
                                 break;
                             
