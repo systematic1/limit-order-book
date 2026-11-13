@@ -22,6 +22,7 @@ public enum OrderStatus : byte
     Canceled = 3,
     Duplicate = 4,
     NotFound = 5,
+    AcceptedAndWaiting = 6,
     Rejected = 16,
     //RejectedReasonA = 17,
     //RejectedReasonB = ...
