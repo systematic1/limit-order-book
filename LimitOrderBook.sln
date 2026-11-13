@@ -2,7 +2,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LimitOrderBook", "LimitOrderBook\LimitOrderBook.csproj", "{81BC321E-C836-47E4-80A9-2A0E20D82C0D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LimitOrderBookTester", "LimitOrderBookTester\LimitOrderBookTester.csproj", "{1C4BE3CD-2DD6-413C-B9AF-3B39BAC5EF3C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OrderGeneratorTest", "OrderGeneratorTest\OrderGeneratorTest.csproj", "{1C4BE3CD-2DD6-413C-B9AF-3B39BAC5EF3C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -9,7 +9,7 @@ namespace LimitOrderBook;
 
 class Program : IDisposable
 {
-    private OrderBookEngine _Engine = new OrderBookEngine(1024, 256);
+    private OrderBookEngine _Engine = new OrderBookEngine(4096, 512);
      
     static async Task Main(string[] args)
     {
@@ -39,30 +39,13 @@ class Program : IDisposable
 
     public Program()
     {
-        var orderPool = ArrayPool<Order>.Shared.Rent(128);
-        ArrayPool<Order>.Shared.Return(orderPool, true);
-
-        var charPool = ArrayPool<char>.Shared.Rent(1024);
-        ArrayPool<char>.Shared.Return(charPool, true);
     }
 
     public async Task Run(CancellationToken ct)
     {
-        ReadResult readResult = default;
-        byte[] utf8Buffer = new byte[100]; 
-        Order[] newOrders = ArrayPool<Order>.Shared.Rent(1);
-        Order newOrder = newOrders[0];
-
-        const byte separator = (byte)'|';
-        int lastPosition = 0;
-        int splitPosition = 0;
-        long length = 0;
-        int fieldNumber = 0;
-        int tempInt = 0;
-        long tempLong = 0;
-        char tempChar = '\0';
-        char requestType = '\0';
-        char[] charBuffer = null;
+        const byte messageDelimiter = (byte)'\n';
+        Order[] newOrders = ArrayPool<Order>.Shared.Rent(1024);
+        int lastOrderIndex = -1;
 
         while (!ct.IsCancellationRequested)
         {
@@ -76,183 +59,70 @@ class Program : IDisposable
 
             try
             {
-                await using (pipeServer)
+                await pipeServer.WaitForConnectionAsync(ct);
+                // Create an order from the listener input data buffer
+
+                var reader = PipeReader.Create(pipeServer,
+                    new StreamPipeReaderOptions(leaveOpen: true, bufferSize: 256));
+                Console.WriteLine("Created PipeServer.");
+
+                while (!ct.IsCancellationRequested && pipeServer.IsConnected)
                 {
-                    await pipeServer.WaitForConnectionAsync(ct);
-                    // Create an order from the listener input data buffer
+                    Console.WriteLine("Server is receiving data...");
 
-                    var reader = PipeReader.Create(pipeServer,
-                        new StreamPipeReaderOptions(leaveOpen: true, bufferSize: 256));
-                    Console.WriteLine("Created PipeServer.");
+                    ReadResult readResult = await reader.ReadAsync(ct);
+                    ReadOnlySequence<byte> buffer = readResult.Buffer;
 
-                    //while (!ct.IsCancellationRequested && pipeServer.IsConnected)
-                    _ = Task.Run(async () =>
+                    // If the stream is completed by the client, break out of the loop
+                    if (buffer.IsEmpty && readResult.IsCompleted)
+                        break;
+
+                    SequencePosition examined = buffer.Start;
+                    SequencePosition consumed = buffer.End;
+
+                    if (!buffer.IsEmpty)
                     {
-                        Console.WriteLine("Server is connected and listening.");
-
-                        readResult = await reader.ReadAsync(ct);
-                        ReadOnlySequence<byte> buffer = readResult.Buffer;
-                        fieldNumber = 0;
-                        lastPosition = 0;
-                        length = buffer.Length;
-
-                        // Convert the char array to an Order object
-                        // The format of the char buffer data is:
-                        //  <ORDER-ID>|<REQ-TYPE>|<ORDER-TYPE>|<PRICE>|<SIDE>|<QTY>|<ACCT-ID>|<SECURITY-ID>|<SENT-TIME>
-
-                        // Detail descriptions:
-                        //  <REQ-TYPE> is "A" for add new order or "C" for cancel existing order
-                        //  <ORDER-TYPE> is "M" (market order) or "L" (limit order) - <PRICE> is ignored for "M"
-                        //  <PRICE> is mantissa format (real price rounded to four decimals * 10000) long int
-                        //  <SIDE> is "B" (buy) or "S" (sell)
-                        //  <SENT-TIME> is unix timestamp
-                        // All -ID fields are integers (not alphanumeric)
-
-                        // Examples:
-                        //  1234567890123|A|L|1235000|B|200|98765432109|1384|4652763476576474
-                        //  2345678901234|C|L|140000|S|50|98765432109|417|4673899928307501
-                        //  3456789012345|A|M|0|B|100|98765432109|1638|4678277000145185
-
-                        if (buffer.Length > 0)
+                        try
                         {
-                            requestType = '\0';
-                            charBuffer = ArrayPool<char>.Shared.Rent((int)buffer.Length);
-                            charBuffer.AsSpan().Clear();
-                            ReadOnlySpan<byte> bufferSpan = buffer.FirstSpan;
-
-                            for (int index = 0; index < buffer.Length; index++)
-                                charBuffer[index] = (char)bufferSpan[index];
-
-                            Console.Write("-- Received data:  ");
-                            Console.WriteLine(charBuffer.AsSpan());
-
-                            while (lastPosition < length && fieldNumber < 9)
+                            var sequenceReader = new SequenceReader<byte>(buffer);
+                            while (!sequenceReader.End && lastOrderIndex < newOrders.Length)
                             {
-                                ReadOnlySequence<byte> seqSlice = buffer.Slice(lastPosition, length);
-                                SequencePosition? seqPosition = seqSlice.PositionOf(separator);
-
-                                splitPosition = seqPosition.HasValue ? seqPosition.Value.GetInteger() : (int)length;
-
-                                ReadOnlySequence<byte> seqFieldData =
-                                    buffer.Slice(lastPosition, splitPosition - lastPosition);
-                                utf8Buffer.AsSpan().Clear();
-                                seqFieldData.CopyTo(utf8Buffer.AsSpan());
-
-                                switch (fieldNumber)
+                                // Read until the message delimiter (or parse up to length if fixed-size)
+                                if (!sequenceReader.TryReadTo(out ReadOnlySequence<byte> messageSequence, messageDelimiter))
                                 {
-                                    case 0:
-                                        // Order-ID (long)
-                                        if (!Int64.TryParse(utf8Buffer.AsSpan(), out tempLong))
-                                            throw new FormatException("Order-ID must be 64-bit integer");
-                                        newOrder.OrderId = tempLong;
-                                        break;
-
-                                    case 1:
-                                        // Request-Type (char)
-                                        tempChar = (char)utf8Buffer[0];
-                                        if (tempChar == 'A' || tempChar == 'C')
-                                            requestType = tempChar;
-                                        else
-                                            throw new FormatException("Req-Type must be 'A' or 'C'");
-                                        break;
-
-                                    case 2:
-                                        // Order-Type (char)
-                                        tempChar = (char)utf8Buffer[0];
-                                        if (tempChar == 'L')
-                                            newOrder.OrderType = OrderType.Limit;
-                                        else if (tempChar == 'M')
-                                            newOrder.OrderType = OrderType.Market;
-                                        else
-                                            throw new FormatException("Order-Type must be 'L' or 'M'");
-                                        break;
-
-                                    case 3:
-                                        // Price (long)
-                                        if (!Int64.TryParse(utf8Buffer.AsSpan(), out tempLong))
-                                            throw new FormatException("Price must be 64-bit integer");
-                                        newOrder.Price = tempLong;
-                                        break;
-
-                                    case 4:
-                                        // Side (char)
-                                        tempChar = (char)utf8Buffer[0];
-                                        if (tempChar == 'B')
-                                            newOrder.Side = OrderSide.Buy;
-                                        else if (tempChar == 'S')
-                                            newOrder.Side = OrderSide.Sell;
-                                        else
-                                            throw new FormatException("Side must be 'B' or 'S'");
-                                        break;
-
-                                    case 5:
-                                        // Qty (int)
-                                        if (!Int32.TryParse(utf8Buffer.AsSpan(), out tempInt))
-                                            throw new FormatException("Quantity must be 32-bit integer");
-                                        newOrder.TotalQuantity = tempInt;
-                                        break;
-
-                                    case 6:
-                                        // Acct-ID (long)
-                                        if (!Int64.TryParse(utf8Buffer.AsSpan(), out tempLong))
-                                            throw new FormatException("Account-ID must be 64-bit integer");
-                                        newOrder.AccountId = tempLong;
-                                        break;
-
-                                    case 7:
-                                        // Security-ID (long)
-                                        if (!Int64.TryParse(utf8Buffer.AsSpan(), out tempLong))
-                                            throw new FormatException("Security-ID must be 64-bit integer");
-                                        newOrder.SecurityId = tempLong;
-                                        break;
-
-                                    case 8:
-                                        // Sent-Time (long)
-                                        if (!Int64.TryParse(utf8Buffer.AsSpan(), out tempLong))
-                                            throw new FormatException("Sent-Time must be 64-bit integer");
-                                        newOrder.Timestamp = tempLong;
-                                        break;
+                                    // Incomplete message; wait for more data
+                                    examined = buffer.End;
+                                    break;
                                 }
 
-                                lastPosition = splitPosition + 1;
-                                length = buffer.Length - lastPosition;
-                                fieldNumber++;
+                                // Mark consumption up to this point
+                                consumed = sequenceReader.Position;
+                                examined = consumed;
+
+                                ref Order orderItem = ref newOrders[++lastOrderIndex];
+                                ProcessAndSend(messageSequence, ref orderItem);
                             }
-
-                            OrderStatus status = OrderStatus.Unknown;
-
-                            // Determine the order type and call the appropriate method to handle
-                            switch (requestType)
-                            {
-                                case 'A':
-                                    Console.WriteLine(
-                                        $"Adding order: {newOrder.OrderId}, {newOrder.Price}, {newOrder.TotalQuantity}, {newOrder.OrderType}");
-                                    status = _Engine.AddOrder(ref newOrder);
-                                    break;
-
-                                case 'C':
-                                    Console.WriteLine($"Canceling order: {newOrder.OrderId}");
-                                    status = _Engine.CancelOrder(ref newOrder);
-                                    break;
-
-                                default:
-                                    Console.WriteLine("Invalid request type - request is skipped");
-                                    status = OrderStatus.Rejected;
-                                    break;
-                            }
-
-                            //  * Send notification back to originator
-                            _Engine.NotifyOrderFillStatus(ref newOrder, status);
                         }
-                        else
+                        finally
                         {
-                            Console.WriteLine("-- Empty data received.");
+                            reader.AdvanceTo(consumed, examined);
                         }
-                    }, ct);
+                    }
+                    else
+                    {
+                        Console.WriteLine("-- Empty data received.");
+                    }
+
+                    if (readResult.IsCompleted)
+                        break;
                 }
 
                 if (!pipeServer.IsConnected)
                     pipeServer.Disconnect();
+            }
+            catch (OperationCanceledException)
+            {
+                Console.WriteLine("Cancelled operation.");
             }
             catch (Exception e)
             {
@@ -262,13 +132,163 @@ class Program : IDisposable
             finally
             {
                 ArrayPool<Order>.Shared.Return(newOrders);
-
-                if (charBuffer is not null)
-                    ArrayPool<char>.Shared.Return(charBuffer);
             }
         }
     }
     
+    private void ProcessAndSend(ReadOnlySequence<byte> messageSequence, ref Order newOrder)
+    {
+        Span<byte> utf8Buffer = stackalloc byte[Math.Max(128, (int)messageSequence.Length)];
+
+        const byte separator = (byte)'|';
+        int fieldNumber = 0;
+        int tempInt = 0;
+        long tempLong = 0;
+        char tempChar = '\0';
+        char requestType = '\0';
+
+        try
+        {
+            // Convert the char array to an Order object
+            // The format of the char buffer data is:
+            //  <ORDER-ID>|<REQ-TYPE>|<ORDER-TYPE>|<PRICE>|<SIDE>|<QTY>|<ACCT-ID>|<SECURITY-ID>|<SENT-TIME>
+
+            // Detail descriptions:
+            //  <REQ-TYPE> is "A" for add new order or "C" for cancel existing order
+            //  <ORDER-TYPE> is "M" (market order) or "L" (limit order) - <PRICE> is ignored for "M"
+            //  <PRICE> is mantissa format (real price rounded to four decimals * 10000) long int
+            //  <SIDE> is "B" (buy) or "S" (sell)
+            //  <SENT-TIME> is unix timestamp
+            // All -ID fields are integers (not alphanumeric)
+
+            // Examples:
+            //  1234567890123|A|L|1235000|B|200|98765432109|1384|4652763476576474
+            //  2345678901234|C|L|140000|S|50|98765432109|417|4673899928307501
+            //  3456789012345|A|M|0|B|100|98765432109|1638|4678277000145185
+
+            SequenceReader<byte> fieldReader = new SequenceReader<byte>(messageSequence);
+            while (!fieldReader.End && fieldNumber < 9)
+            {
+                fieldReader.TryReadTo(out ReadOnlySequence<byte> fieldSeq, separator);
+                // If it's the last field, read the remainder
+                if (fieldSeq.IsEmpty && fieldNumber == 8)
+                    fieldSeq = fieldReader.Sequence.Slice(fieldReader.Position);
+
+                utf8Buffer.Clear();
+                fieldSeq.CopyTo(utf8Buffer);
+                ReadOnlySpan<byte> fieldSpan = utf8Buffer.Slice(0, (int)fieldSeq.Length);
+
+                switch (fieldNumber)
+                {
+                    case 0:
+                        // Order-ID (long)
+                        if (!Int64.TryParse(utf8Buffer, out tempLong))
+                            throw new FormatException("Order-ID must be 64-bit integer");
+                        newOrder.OrderId = tempLong;
+                        break;
+
+                    case 1:
+                        // Request-Type (char)
+                        tempChar = (char)utf8Buffer[0];
+                        if (tempChar == 'A' || tempChar == 'C')
+                            requestType = tempChar;
+                        else
+                            throw new FormatException("Req-Type must be 'A' or 'C'");
+                        break;
+
+                    case 2:
+                        // Order-Type (char)
+                        tempChar = (char)utf8Buffer[0];
+                        if (tempChar == 'L')
+                            newOrder.OrderType = OrderType.Limit;
+                        else if (tempChar == 'M')
+                            newOrder.OrderType = OrderType.Market;
+                        else
+                            throw new FormatException("Order-Type must be 'L' or 'M'");
+                        break;
+
+                    case 3:
+                        // Price (long)
+                        if (!Int64.TryParse(utf8Buffer, out tempLong))
+                            throw new FormatException("Price must be 64-bit integer");
+                        newOrder.Price = tempLong;
+                        break;
+
+                    case 4:
+                        // Side (char)
+                        tempChar = (char)utf8Buffer[0];
+                        if (tempChar == 'B')
+                            newOrder.Side = OrderSide.Buy;
+                        else if (tempChar == 'S')
+                            newOrder.Side = OrderSide.Sell;
+                        else
+                            throw new FormatException("Side must be 'B' or 'S'");
+                        break;
+
+                    case 5:
+                        // Qty (int)
+                        if (!Int32.TryParse(utf8Buffer, out tempInt))
+                            throw new FormatException("Quantity must be 32-bit integer");
+                        newOrder.TotalQuantity = tempInt;
+                        break;
+
+                    case 6:
+                        // Acct-ID (long)
+                        if (!Int64.TryParse(utf8Buffer, out tempLong))
+                            throw new FormatException("Account-ID must be 64-bit integer");
+                        newOrder.AccountId = tempLong;
+                        break;
+
+                    case 7:
+                        // Security-ID (long)
+                        if (!Int64.TryParse(utf8Buffer, out tempLong))
+                            throw new FormatException("Security-ID must be 64-bit integer");
+                        newOrder.SecurityId = tempLong;
+                        break;
+
+                    case 8:
+                        // Sent-Time (long)
+                        if (!Int64.TryParse(utf8Buffer, out tempLong))
+                            throw new FormatException("Sent-Time must be 64-bit integer");
+                        newOrder.Timestamp = tempLong;
+                        break;
+                }
+
+                fieldNumber++;
+            }
+
+            OrderStatus status = OrderStatus.Unknown;
+
+            // Determine the order type and call the appropriate method to handle
+            switch (requestType)
+            {
+                case 'A':
+                    Console.WriteLine(
+                        $"Adding order #{newOrder.OrderId} => {newOrder.Side} {newOrder.Price}, {newOrder.TotalQuantity}, {newOrder.OrderType}");
+                    status = _Engine.AddOrder(ref newOrder);
+                    break;
+
+                case 'C':
+                    Console.WriteLine($"Canceling order #{newOrder.OrderId}");
+                    status = _Engine.CancelOrder(ref newOrder);
+                    break;
+
+                default:
+                    Console.WriteLine("Invalid request type - request is skipped");
+                    status = OrderStatus.Rejected;
+                    break;
+            }
+
+            //  * Send notification back to originator
+            _Engine.NotifyOrderFillStatus(ref newOrder, status);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+            throw;
+        }
+    }
+
     public void Dispose()
     {
         _Engine.Dispose();
