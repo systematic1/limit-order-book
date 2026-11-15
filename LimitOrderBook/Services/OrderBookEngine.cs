@@ -139,14 +139,63 @@ public class OrderBookEngine : IDisposable
         return OrderStatus.Canceled;
     }
 
-    //public OrderStatus ModifyOrder(ref Order order)
-    //{
-    //    return OrderStatus.Rejected;
-    //}
-
     public async ValueTask NotifyOrderFillStatus(Order order, OrderStatus status, FillResults? fillResults)
     {
-        // Not implemented here
+        char[] messageBuffer = ArrayPool<char>.Shared.Rent(512);
+        
+        switch (status)
+        {
+            case OrderStatus.Canceled:
+                $"Order {order.OrderId} has been cancelled.".CopyTo(messageBuffer);
+                break;
+            
+            case OrderStatus.Duplicate:
+                $"This order ({order.OrderId}) has already been submitted.".CopyTo(messageBuffer);
+                break;
+            
+            case  OrderStatus.Filled:
+                if (fillResults != null)
+                    $"Order {order.OrderId} has been filled with quantity {fillResults.Value.FilledQuantity} at ${(float)fillResults.Value.FillPrice / 100f}.".CopyTo(messageBuffer);
+                else 
+                    $"Order {order.OrderId} has been filled (no details).".CopyTo(messageBuffer);
+                break;
+            
+            case OrderStatus.NotFound:
+                $"This order ({order.OrderId}) is invalid.".CopyTo(messageBuffer);
+                break;
+            
+            case OrderStatus.PartiallyFilled:
+                if (fillResults != null)
+                    $"Order {order.OrderId} has been partially filled with quantity {fillResults.Value.FilledQuantity} at ${(float)fillResults.Value.FillPrice / 100f}.".CopyTo(messageBuffer);
+                else 
+                    $"Order {order.OrderId} has been partially filled (no details).".CopyTo(messageBuffer);
+                break;
+            
+            case OrderStatus.Rejected:
+                if (fillResults != null)
+                    $"Order {order.OrderId} has been rejected for reason: {fillResults.Value.Message ?? "None"}".CopyTo(messageBuffer);
+                else 
+                    $"Order {order.OrderId} has been rejected (no details).".CopyTo(messageBuffer);
+                break;
+            
+            default:
+                $"Order status {status.ToString()} was returned for order {order.OrderId}".CopyTo(messageBuffer);
+                break;
+        }
+
+        try
+        {
+            await _NotificationService.SendNotification(99999, order.OrderId, status, messageBuffer);
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error while notifying client.");
+            Console.WriteLine(e.Message);
+        }
+        finally
+        {
+            ArrayPool<char>.Shared.Return(messageBuffer);
+        }
     }
 
     // ======================================================
