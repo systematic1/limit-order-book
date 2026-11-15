@@ -95,7 +95,12 @@ public class OrderBookEngine : IDisposable
 
         // If we run out of qualifying limit orders, store the order in the book (resting)
         if (AddOrderToBook(ref order))
-            return OrderStatus.PartiallyFilled;
+        {
+            if (quantityFilled > 0)
+                return OrderStatus.PartiallyFilled;
+            else
+                return OrderStatus.AcceptedWaiting;
+        }
         else
             return OrderStatus.Rejected;
     }
@@ -131,11 +136,6 @@ public class OrderBookEngine : IDisposable
         
         return OrderStatus.Canceled;
     }
-
-    //public OrderStatus ModifyOrder(ref Order order)
-    //{
-    //    return OrderStatus.Rejected;
-    //}
 
     public void NotifyOrderFillStatus(ref Order order, OrderStatus status)
     {
