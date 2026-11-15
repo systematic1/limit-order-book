@@ -37,7 +37,7 @@ class Program
             PipeOptions.Asynchronous);
         
         await pipeClient.ConnectAsync(5000);
-        Console.WriteLine("Connected to Pipe Server.");
+        Console.WriteLine("Connected to LOB Pipe Server Listener.");
         
         await using var writer = new StreamWriter(pipeClient) { AutoFlush = true };
         

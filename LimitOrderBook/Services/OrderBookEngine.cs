@@ -6,12 +6,14 @@ namespace LimitOrderBook.Services;
 
 public class OrderBookEngine : IDisposable
 {
+    private ClientNotificationService _NotificationService;
     private OrderCollection _Orders;
     private PriceLevelCollection _AskPriceLevels;
     private PriceLevelCollection _BidPriceLevels;
     
     public OrderBookEngine(int orderCapacity, int priceLevelCapacity)
     {
+        _NotificationService = new ClientNotificationService();
         _Orders = new OrderCollection(orderCapacity);
         _AskPriceLevels = new PriceLevelCollection(priceLevelCapacity);
         _BidPriceLevels = new PriceLevelCollection(priceLevelCapacity);
@@ -137,7 +139,12 @@ public class OrderBookEngine : IDisposable
         return OrderStatus.Canceled;
     }
 
-    public void NotifyOrderFillStatus(ref Order order, OrderStatus status)
+    //public OrderStatus ModifyOrder(ref Order order)
+    //{
+    //    return OrderStatus.Rejected;
+    //}
+
+    public async ValueTask NotifyOrderFillStatus(Order order, OrderStatus status, FillResults? fillResults)
     {
         // Not implemented here
     }
@@ -202,7 +209,17 @@ public class OrderBookEngine : IDisposable
                     quantityFilled = quantityRemaining;
                 }
 
-                NotifyOrderFillStatus(ref matchedOrder, matchedStatus);
+                FillResults results = new FillResults()
+                {
+                    OrderID = matchedOrder.OrderId,
+                    RequestedQuantity = order.RemainingQuantity,
+                    FilledQuantity = quantityFilled,
+                    RemainingQuantity = quantityRemaining,
+                    FillPrice = priceLevel.Price,
+                    AuxData = 0,
+                    Message = null
+                };
+                NotifyOrderFillStatus(matchedOrder, matchedStatus, results).GetAwaiter().GetResult();
                 
                 // Update price level data
                 priceLevel.QuantityAvailable -= quantityRemaining;

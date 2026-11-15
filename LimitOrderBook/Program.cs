@@ -280,7 +280,7 @@ class Program : IDisposable
             }
 
             //  * Send notification back to originator
-            _Engine.NotifyOrderFillStatus(ref newOrder, status);
+            _Engine.NotifyOrderFillStatus(newOrder, status, null);
         }
         catch (Exception e)
         {
