@@ -28,7 +28,8 @@ class Program : IDisposable
 
         try
         {
-            await instance.Run(cts.Token);
+            //await instance.RunListener(cts.Token);
+            instance.RunLocalTest(256);
         }
         catch (OperationCanceledException)
         {
@@ -41,11 +42,13 @@ class Program : IDisposable
     {
     }
 
-    public async Task Run(CancellationToken ct)
+    public async Task RunListener(CancellationToken ct)
     {
         const byte messageDelimiter = (byte)'\n';
         Order[] newOrders = ArrayPool<Order>.Shared.Rent(1024);
         int lastOrderIndex = -1;
+
+        _Engine.EnableNotifications = true;
 
         while (!ct.IsCancellationRequested)
         {
@@ -292,5 +295,103 @@ class Program : IDisposable
     public void Dispose()
     {
         _Engine.Dispose();
+    }
+
+    public void RunLocalTest(int numberOfOrders)
+    {
+        Console.WriteLine($"Running {numberOfOrders} orders...");
+        Console.WriteLine();
+
+        _Engine.EnableNotifications = false;
+        
+        List<int> orderNumbers = new List<int>();
+        
+        const double highPrice = 12.00;
+        const double lowPrice = 11.50;
+        const int lowQuantity = 1;
+        const int highQuantity = 50;
+        
+        OrderSide side = OrderSide.Buy;
+        OrderType orderType = OrderType.Limit;
+        char action = 'A';
+        int newOrderId = 0;
+        
+        for (int index = 0; index < numberOfOrders; index++)
+        {
+            if (Random.Shared.Next() % 10 > 5)
+                side = OrderSide.Buy;
+            else 
+                side = OrderSide.Sell;
+            
+            double price = ((highPrice - lowPrice) * Random.Shared.NextDouble()) + lowPrice;
+            int quantity = Random.Shared.Next(lowQuantity, highQuantity);
+
+            if (Random.Shared.Next() % 10 > 6)
+                orderType = OrderType.Limit;
+            else
+                orderType = OrderType.Market;
+
+            long accountId = ((Random.Shared.Next() % 25L) + 1L) * 11111L; 
+
+            if (Random.Shared.Next() % 3 > 0 || orderNumbers.Count() < 5)
+            {
+                action = 'A';
+                do 
+                {
+                    newOrderId = Random.Shared.Next();
+                }
+                while (orderNumbers.IndexOf(newOrderId) != -1);
+                                    
+                orderNumbers.Add(newOrderId);
+            }
+            else
+            {
+                action = 'C';
+                newOrderId = orderNumbers.First();
+                
+                orderNumbers.Remove(orderNumbers.First());
+            }
+
+            OrderStatus status = OrderStatus.Unknown;
+            var newOrder = new Order()
+            {
+                OrderId = newOrderId,
+                Side = side,
+                Price = (long)(price * 10000.0),
+                RemainingQuantity = quantity,
+                AccountId = accountId,
+                OrderType = orderType,
+                PriceLevelIndex = -1,
+                SecurityId = 88888, 
+                Timestamp = DateTime.Now.Ticks, 
+                TimeToLive = TimeToLive.GoodTilCanceled, 
+                TotalQuantity = quantity
+            };
+            
+            switch (action)
+            {
+                case 'A':
+                    Console.WriteLine(
+                        $"Adding order #{newOrder.OrderId} => {newOrder.Side} : ${newOrder.Price} : Q={newOrder.TotalQuantity}, {newOrder.OrderType}, A={newOrder.AccountId}");
+                    status = _Engine.AddOrder(ref newOrder);
+                    break;
+
+                case 'C':
+                    Console.WriteLine($"Canceling order #{newOrder.OrderId}");
+                    status = _Engine.CancelOrder(ref newOrder);
+                    break;
+
+                default:
+                    Console.WriteLine("Invalid request type - request is skipped");
+                    status = OrderStatus.Rejected;
+                    break;
+            }
+            
+            Console.WriteLine($"   <== {status}");
+        }
+        
+        Console.WriteLine();
+        Console.WriteLine("Finished generating all orders.");
+        
     }
 }

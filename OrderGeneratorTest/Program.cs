@@ -21,7 +21,7 @@ class Program
         List<int> orderNumbers = new List<int>();
         
         const double highPrice = 12.00;
-        const double lowPrice = 11.75;
+        const double lowPrice = 11.50;
         const int lowQuantity = 1;
         const int highQuantity = 50;
         

@@ -23,7 +23,8 @@ public class OrderBookEngine : IDisposable
     {
         ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
         int levelIndex;
-        int quantityFilled = 1; // Set to 1 so it will enter the while loop the first time
+        int quantityFilled = 0;
+        bool wasFilled = true;
         long price = order.Price;
 
         OrderStatus status = ValidateOrder(ref order);
@@ -38,13 +39,13 @@ public class OrderBookEngine : IDisposable
             // If market order, find the lowest ask price available to start
             if (order.OrderType == OrderType.Market)
             {
-                levelIndex = _AskPriceLevels.GetNextHigherPriceLevel(long.MinValue);
+                levelIndex = _AskPriceLevels.GetNextLowerPriceLevel(long.MinValue);
                 if (levelIndex != -1)
                     price = _AskPriceLevels.GetPriceLevelByIndex(levelIndex).Price;
             }
 
             // We keep looking for more orders to fill until our order is completed
-            while (order.RemainingQuantity > 0 && quantityFilled > 0)
+            while (order.RemainingQuantity > 0 && wasFilled)
             {
                 priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
@@ -58,20 +59,21 @@ public class OrderBookEngine : IDisposable
 
                 // Find a matching order and fill it
                 quantityFilled = FillMatchingOrder(ref priceLevel, ref order);
+                wasFilled = (quantityFilled > 0);
             }
         }
-        else
+        else     // Sell OrderSide
         {
             // If market order, find the highest bid price available to start
             if (order.OrderType == OrderType.Market)
             {
-                levelIndex = _AskPriceLevels.GetNextLowerPriceLevel(long.MaxValue);
+                levelIndex = _AskPriceLevels.GetNextHigherPriceLevel(long.MaxValue);
                 if (levelIndex != -1)
                     price = _AskPriceLevels.GetPriceLevelByIndex(levelIndex).Price;
             }
 
             // We keep looking for more orders to fill until our order is completed
-            while (order.RemainingQuantity > 0 && quantityFilled > 0)
+            while (order.RemainingQuantity > 0 && wasFilled)
             {
                 priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
@@ -86,6 +88,7 @@ public class OrderBookEngine : IDisposable
                     
                 // Find a matching order and fill it
                 quantityFilled = FillMatchingOrder(ref priceLevel, ref order);
+                wasFilled = (quantityFilled > 0);
             }
         }
 
@@ -110,7 +113,7 @@ public class OrderBookEngine : IDisposable
     public OrderStatus CancelOrder(ref Order order)
     {
         OrderStatus status = ValidateOrder(ref order);
-        if (status != OrderStatus.Unknown)
+        if (status != OrderStatus.Unknown && status != OrderStatus.Duplicate)
             return status;
         
         ref Order storedOrderRef = ref _Orders.GetOrder(order.OrderId);
@@ -120,9 +123,9 @@ public class OrderBookEngine : IDisposable
         // Find the price level and adjust the quantity remaining and order count
         ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
         if (storedOrderRef.Side == OrderSide.Buy)
-            priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);    // Is this correct collection?
+            priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price); 
         else
-            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);    // Is this correct collection?
+            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);
 
         if (Unsafe.IsNullRef(ref priceLevel))
             return OrderStatus.NotFound;
@@ -153,7 +156,7 @@ public class OrderBookEngine : IDisposable
                 $"This order ({order.OrderId}) has already been submitted.".CopyTo(messageBuffer);
                 break;
             
-            case  OrderStatus.Filled:
+            case OrderStatus.Filled:
                 if (fillResults != null)
                     $"Order {order.OrderId} has been filled with quantity {fillResults.Value.FilledQuantity} at ${(float)fillResults.Value.FillPrice / 100f}.".CopyTo(messageBuffer);
                 else 
@@ -247,7 +250,7 @@ public class OrderBookEngine : IDisposable
                     order.RemainingQuantity = 0;
                     quantityFilled = quantityRemaining;
                 }
-                else
+                else     // Not enough to completely fill order
                 {
                     quantityRemaining = matchedOrder.RemainingQuantity;
                     order.RemainingQuantity -= quantityRemaining;
@@ -292,21 +295,6 @@ public class OrderBookEngine : IDisposable
 
         if (order.Side == OrderSide.Buy)
         {
-            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(order.Price);
-            
-            // If the price level doesn't exist, add it to the price levels
-            if (Unsafe.IsNullRef(ref priceLevel))
-            {
-                levelIndex = _AskPriceLevels.AddPriceLevel(price, order.Side);
-                if (levelIndex == -1)
-                    return false;
-                
-                priceLevel = ref _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
-                order.PriceLevelIndex = levelIndex;
-            }
-        }
-        else
-        {
             priceLevel = ref _BidPriceLevels.GetPriceLevelByPrice(order.Price);
             
             // If the price level doesn't exist, add it to the price levels
@@ -317,6 +305,21 @@ public class OrderBookEngine : IDisposable
                     return false;
                 
                 priceLevel = ref _BidPriceLevels.GetPriceLevelByIndex(levelIndex);
+                order.PriceLevelIndex = levelIndex;
+            }
+        }
+        else    // Sell OrderSide
+        {
+            priceLevel = ref _AskPriceLevels.GetPriceLevelByPrice(order.Price);
+            
+            // If the price level doesn't exist, add it to the price levels
+            if (Unsafe.IsNullRef(ref priceLevel))
+            {
+                levelIndex = _AskPriceLevels.AddPriceLevel(price, order.Side);
+                if (levelIndex == -1)
+                    return false;
+                
+                priceLevel = ref _AskPriceLevels.GetPriceLevelByIndex(levelIndex);
                 order.PriceLevelIndex = levelIndex;
             }
         }
@@ -341,5 +344,11 @@ public class OrderBookEngine : IDisposable
         _BidPriceLevels.Dispose();
         _AskPriceLevels.Dispose();
         _Orders.Dispose();
+    }
+
+    public bool EnableNotifications
+    {
+        get => _NotificationService.Enabled;
+        set => _NotificationService.Enabled = value;
     }
 }
