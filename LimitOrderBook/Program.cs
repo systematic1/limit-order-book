@@ -9,7 +9,7 @@ namespace LimitOrderBook;
 
 class Program : IDisposable
 {
-    private OrderBookEngine _Engine = new OrderBookEngine(4096, 512);
+    private OrderBookEngine Engine = new OrderBookEngine(4096, 512);
      
     static async Task Main(string[] args)
     {
@@ -48,7 +48,7 @@ class Program : IDisposable
         Order[] newOrders = ArrayPool<Order>.Shared.Rent(1024);
         int lastOrderIndex = -1;
 
-        _Engine.EnableNotifications = true;
+        Engine.EnableNotifications = true;
 
         while (!ct.IsCancellationRequested)
         {
@@ -268,12 +268,12 @@ class Program : IDisposable
                 case 'A':
                     Console.WriteLine(
                         $"Adding order #{newOrder.OrderId} => {newOrder.Side} {newOrder.Price}, {newOrder.TotalQuantity}, {newOrder.OrderType}");
-                    status = _Engine.AddOrder(ref newOrder);
+                    status = Engine.AddOrder(ref newOrder);
                     break;
 
                 case 'C':
                     Console.WriteLine($"Canceling order #{newOrder.OrderId}");
-                    status = _Engine.CancelOrder(ref newOrder);
+                    status = Engine.CancelOrder(newOrder.OrderId);
                     break;
 
                 default:
@@ -281,9 +281,6 @@ class Program : IDisposable
                     status = OrderStatus.Rejected;
                     break;
             }
-
-            //  * Send notification back to originator
-            _Engine.NotifyOrderFillStatus(newOrder, status, null);
         }
         catch (Exception e)
         {
@@ -294,7 +291,7 @@ class Program : IDisposable
 
     public void Dispose()
     {
-        _Engine.Dispose();
+        Engine.Dispose();
     }
 
     public void RunLocalTest(int numberOfOrders)
@@ -302,7 +299,7 @@ class Program : IDisposable
         Console.WriteLine($"Running {numberOfOrders} orders...");
         Console.WriteLine();
 
-        _Engine.EnableNotifications = false;
+        Engine.EnableNotifications = false;
         
         List<int> orderNumbers = new List<int>();
         
@@ -326,14 +323,14 @@ class Program : IDisposable
             double price = ((highPrice - lowPrice) * Random.Shared.NextDouble()) + lowPrice;
             int quantity = Random.Shared.Next(lowQuantity, highQuantity);
 
-            if (Random.Shared.Next() % 10 > 6)
+            if (Random.Shared.Next() % 10 > 2)
                 orderType = OrderType.Limit;
             else
                 orderType = OrderType.Market;
 
-            long accountId = ((Random.Shared.Next() % 25L) + 1L) * 11111L; 
+            long accountId = ((Random.Shared.Next() % 100L) + 1L) * 11111L; 
 
-            if (Random.Shared.Next() % 3 > 0 || orderNumbers.Count() < 5)
+            if (Random.Shared.Next() % 4 > 0 || orderNumbers.Count() < 5)
             {
                 action = 'A';
                 do 
@@ -352,12 +349,12 @@ class Program : IDisposable
                 orderNumbers.Remove(orderNumbers.First());
             }
 
-            OrderStatus status = OrderStatus.Unknown;
+            OrderStatus status;
             var newOrder = new Order()
             {
                 OrderId = newOrderId,
                 Side = side,
-                Price = (long)(price * 10000.0),
+                Price = ((long)(price * 10000.0)) / 100,
                 RemainingQuantity = quantity,
                 AccountId = accountId,
                 OrderType = orderType,
@@ -373,12 +370,16 @@ class Program : IDisposable
                 case 'A':
                     Console.WriteLine(
                         $"Adding order #{newOrder.OrderId} => {newOrder.Side} : ${newOrder.Price} : Q={newOrder.TotalQuantity}, {newOrder.OrderType}, A={newOrder.AccountId}");
-                    status = _Engine.AddOrder(ref newOrder);
+                    status = Engine.AddOrder(ref newOrder);
+                    
+                    // If add indicates order no longer exists in orderbook, remove it from list of waiting orders
+                    if (status != OrderStatus.PartiallyFilled && status != OrderStatus.AcceptedWaiting)
+                        orderNumbers.Remove((int)newOrder.OrderId);
                     break;
 
                 case 'C':
-                    Console.WriteLine($"Canceling order #{newOrder.OrderId}");
-                    status = _Engine.CancelOrder(ref newOrder);
+                    Console.WriteLine($"Canceling order #{newOrderId}");
+                    status = Engine.CancelOrder(newOrderId);
                     break;
 
                 default:

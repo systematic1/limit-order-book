@@ -12,7 +12,7 @@ public class ClientNotificationService
     {
     }
 
-    public async ValueTask SendNotification(int accountId, long orderId, OrderStatus status, Memory<char> message)
+    public async ValueTask SendNotification(int accountId, long orderId, OrderStatus status, ReadOnlyMemory<char> message)
     {
         if (Enabled)
         {
@@ -42,6 +42,10 @@ public class ClientNotificationService
             await streamWriter.WriteLineAsync(buffer.AsMemory(0, bytes));
 
             ArrayPool<char>.Shared.Return(buffer, true);
+        }
+        else
+        {
+            Console.WriteLine($"  ** NOTIFY ----> AC={accountId}, ID={orderId}, ST={status}: {message}");
         }
     }
 }

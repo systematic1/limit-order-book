@@ -9,4 +9,5 @@ public struct FillResults
     public long FillPrice { get; set; }
     public long AuxData { get; set; }
     public string? Message { get; set; }
+    public OrderStatus Status { get; set; }
 }

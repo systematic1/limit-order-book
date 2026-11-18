@@ -6,37 +6,39 @@ namespace LimitOrderBook.Services;
 
 public class PriceLevelCollection : IDisposable
 {
-    private readonly int _Capacity;
-    private readonly int _CapacityMask;
-    private PriceLevel[] _Levels;
-    private bool[] _Available;
-    private int _CountInUse;
-    private int _LastIndex;
+    private readonly int Capacity;
+    private readonly int CapacityMask;
+    private PriceLevel[] Levels;
+    private bool[] Available;
+    private int CountInUse;
+    private int LastIndex;
+    private int HighestIndex;
 
     public PriceLevelCollection(int capacityPowerOf2)
     {
         if (capacityPowerOf2 > 0 && (capacityPowerOf2 & (capacityPowerOf2 - 1)) != 0) 
             throw new ArgumentException($"The {nameof(capacityPowerOf2)} parameter must be a power of 2.");
         
-        _Capacity = capacityPowerOf2;
-        _CapacityMask = _Capacity - 1;
-        _CountInUse = 0;
-        _LastIndex = 0;
+        Capacity = capacityPowerOf2;
+        CapacityMask = Capacity - 1;
+        CountInUse = 0;
+        LastIndex = 0;
+        HighestIndex = -1;
         
         // Pre-allocate the pool and set available indices values to 1
-        _Levels = new PriceLevel[_Capacity];
-        _Available = new bool[_Capacity];
-        Array.Fill<bool>(_Available, true);
+        Levels = new PriceLevel[Capacity];
+        Available = new bool[Capacity];
+        Array.Fill<bool>(Available, true);
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int FindLevelIndex(long price)
     {
-        if (_CountInUse > 0)
+        if (CountInUse > 0)
         {
-            for (int index = 0; index < _Capacity; index++)
+            for (int index = 0; index <= HighestIndex; index++)
             {
-                if (!_Available[index] && _Levels[index].Price == price)
+                if (!Available[index] && Levels[index].Price == price)
                     return index;
             }
         }
@@ -51,14 +53,14 @@ public class PriceLevelCollection : IDisposable
         if (index == -1)
             return ref Unsafe.NullRef<PriceLevel>();
 
-        return ref _Levels[index];
+        return ref Levels[index];
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref PriceLevel GetPriceLevelByIndex(int index)
     {
-        if (index >= 0 && index < _Capacity && !_Available[index])
-            return ref _Levels[index];
+        if (index >= 0 && index <= HighestIndex && !Available[index])
+            return ref Levels[index];
         
         return ref Unsafe.NullRef<PriceLevel>();
     }
@@ -68,11 +70,11 @@ public class PriceLevelCollection : IDisposable
         long nearestHigherPrice = long.MaxValue;
         int nextHigherIndex = -1;
             
-        for (int index = 0; index < _Capacity; index++)
+        for (int index = 0; index <= HighestIndex; index++)
         {
-            if (!_Available[index] && _Levels[index].Price > price)
+            if (!Available[index] && Levels[index].Price > price)
             {
-                nearestHigherPrice = Math.Min(_Levels[index].Price, nearestHigherPrice);
+                nearestHigherPrice = Math.Min(Levels[index].Price, nearestHigherPrice);
                 nextHigherIndex = index;
             }
         }
@@ -85,11 +87,11 @@ public class PriceLevelCollection : IDisposable
         long nearestLowerPrice = long.MinValue;
         int nextLowerIndex = -1;
 
-        for (int index = 0; index < _Capacity; index++)
+        for (int index = 0; index <= HighestIndex; index++)
         {
-            if (!_Available[index] && _Levels[index].Price < price)
+            if (!Available[index] && Levels[index].Price < price)
             {
-                nearestLowerPrice = Math.Max(_Levels[index].Price, nearestLowerPrice);
+                nearestLowerPrice = Math.Max(Levels[index].Price, nearestLowerPrice);
                 nextLowerIndex = index;
             }
         }
@@ -99,47 +101,50 @@ public class PriceLevelCollection : IDisposable
 
     public int AddPriceLevel(long price, OrderSide side)
     {
-        if (_CountInUse < _Capacity)
+        if (CountInUse < Capacity)
         {
             // 1. Find the price level in the list that has the next higher price above this order [HigherLevel]
             int nextHigherIndex = GetNextHigherPriceLevel(price); 
 
             // 2. Save the price level index from HigherLevel.NextLowerIndex [LowerLevel]
-            int higherLevel_LowerIndex = (nextHigherIndex == -1 ? -1 : _Levels[nextHigherIndex].NextLowerLevelIndex);
+            int higherLevel_LowerIndex = (nextHigherIndex == -1 ? -1 : Levels[nextHigherIndex].NextLowerLevelIndex);
             
             // 3. Insert a new price level [NewLevel] and link HigherLevel.NextLowerIndex to its index
             int loopCount = 0;
-            int searchIndex = _LastIndex;
+            int searchIndex = LastIndex;
 
-            while (!_Available[searchIndex] && loopCount < _Capacity)
+            while (!Available[searchIndex] && loopCount < Capacity)
             {
-                searchIndex = (searchIndex + 1) & _CapacityMask;
+                searchIndex = (searchIndex + 1) & CapacityMask;
                 loopCount++;
             }
             
             // 4. If an available slot was found, use it and mark it as used
-            if (loopCount < _Capacity)
+            if (loopCount < Capacity)
             {
-                _LastIndex = searchIndex;
-                _Levels[_LastIndex].Clear();
-                _Levels[_LastIndex].Price = price;
-                _Levels[_LastIndex].Side = side;
+                LastIndex = searchIndex;
+                Levels[LastIndex].Clear();
+                Levels[LastIndex].Price = price;
+                Levels[LastIndex].Side = side;
 
                 // 5. Link NewLevel.NextHigherIndex to HigherLevel, and link NewLevel.NextLowerIndex to LowerLevel
                 // Link LowerLevel.NextHigherIndex to NewLevel
-                _Levels[_LastIndex].NextLowerLevelIndex = higherLevel_LowerIndex;
-                _Levels[_LastIndex].NextHigherLevelIndex = nextHigherIndex;
+                Levels[LastIndex].NextLowerLevelIndex = higherLevel_LowerIndex;
+                Levels[LastIndex].NextHigherLevelIndex = nextHigherIndex;
                 
                 if (nextHigherIndex > -1)
-                    _Levels[nextHigherIndex].NextLowerLevelIndex = _LastIndex;
+                    Levels[nextHigherIndex].NextLowerLevelIndex = LastIndex;
                 if (higherLevel_LowerIndex > -1)
-                    _Levels[higherLevel_LowerIndex].NextHigherLevelIndex = _LastIndex;
+                    Levels[higherLevel_LowerIndex].NextHigherLevelIndex = LastIndex;
 
                 // 6. Mark NewLevel's AvailableIndex as 0 and increment CountInUse
-                _Available[_LastIndex] = false;
-                _CountInUse++;
+                Available[LastIndex] = false;
+                CountInUse++;
                 
-                return _LastIndex;
+                if (LastIndex > HighestIndex)
+                    HighestIndex = LastIndex;
+                
+                return LastIndex;
             }
         }
 
@@ -148,30 +153,33 @@ public class PriceLevelCollection : IDisposable
 
     public bool RemovePriceLevel(long price)
     {
-        if (_CountInUse > 0)
+        if (CountInUse > 0)
         {
             // 1. Find the price level for the given price [CurrentLevel]; return false if it doesn't exist
             int index = FindLevelIndex(price);
             if (index != -1)
             {
                 // 2. Link the HigherLevel.NextLowerIndex to LowerLevel index
-                int nextHigherIndex = _Levels[index].NextHigherLevelIndex;
-                int nextLowerIndex = _Levels[index].NextLowerLevelIndex;
+                int nextHigherIndex = Levels[index].NextHigherLevelIndex;
+                int nextLowerIndex = Levels[index].NextLowerLevelIndex;
                 
                 if (nextHigherIndex != -1)
-                    _Levels[nextHigherIndex].NextLowerLevelIndex = nextLowerIndex;
+                    Levels[nextHigherIndex].NextLowerLevelIndex = nextLowerIndex;
                 
                 // 3. Link the LowerLevel.NextHigherIndex to HigherLevel index
                 if (nextLowerIndex != -1)
-                    _Levels[nextLowerIndex].NextHigherLevelIndex = nextHigherIndex;
+                    Levels[nextLowerIndex].NextHigherLevelIndex = nextHigherIndex;
 
                 // 4. Clear the CurrentLevel item content
-                _Levels[index].Clear();
+                Levels[index].Clear();
 
                 // 5. Mark NewLevel's AvailableIndex as true and decrement CountInUse
-                _Available[index] = true;
-                _LastIndex = index;
-                _CountInUse--;
+                Available[index] = true;
+                LastIndex = index;
+                CountInUse--;
+
+                if (index == HighestIndex)
+                    HighestIndex--;
 
                 return true;
             }
@@ -182,6 +190,6 @@ public class PriceLevelCollection : IDisposable
     
     public void Dispose()
     {
-        _Levels = null;
+        Levels = null;
     }
 }

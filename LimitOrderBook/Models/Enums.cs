@@ -24,6 +24,7 @@ public enum OrderStatus : byte
     NotFound = 5,
     AcceptedWaiting = 6,
     Rejected = 16,
+    RejectedNoMatches = 17
     //RejectedReasonA = 17,
     //RejectedReasonB = ...
 }
