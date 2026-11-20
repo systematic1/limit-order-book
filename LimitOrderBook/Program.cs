@@ -1,6 +1,7 @@
 ﻿using System.Buffers;
 using System.IO.Pipelines;
 using System.IO.Pipes;
+using System.Runtime.CompilerServices;
 using LimitOrderBook.Models;
 using LimitOrderBook.Services;
 using PipeOptions = System.IO.Pipes.PipeOptions;
@@ -389,6 +390,51 @@ class Program : IDisposable
             }
             
             Console.WriteLine($"   <== {status}");
+                    
+            if (index % 10 == 9) 
+            {
+                ref OrderCollection orderCol = ref Engine.GetOrderCollection();
+                Console.WriteLine();
+                Console.WriteLine("=============================== ORDER COLLECTION =================================");
+
+                for (int i = 0; i <= orderCol.MaxIndex(); i++) {
+                    ref Order order = ref orderCol.OrderAtIndex(i);
+                    if (!Unsafe.IsNullRef(ref order)) {
+                        Console.WriteLine($"{order.OrderId}\t {(order.Side == OrderSide.Buy ? "BUY \t$" : "SELL\t$")} " +
+                            $"{(order.Price) / 100.0}\t RQ={order.RemainingQuantity}\t TQ=" +
+                            $"{order.TotalQuantity}\t ${(order.OrderType == OrderType.Limit ? "LIM " : "MKT ")}" +
+                            $"\t OLD={order.NextOlderOrderIndexAtLevel}\t NEW={order.NextNewerOrderIndexAtLevel}");
+                    }
+                }
+                Console.WriteLine();
+
+                /*ref PriceLevelCollection askCol = ref Engine.GetAskPriceLevelCollection();
+                Console.WriteLine(); 
+                Console.WriteLine("===================================   ASKS   ======================================");
+
+                for (int i = 0; i <= askCol.MaxIndex(); i++) {
+                    ref level = ref askCol.LevelAtIndex(i);
+                    if (!Unsafe.IsNullRef(ref level))
+                        std::cout << level.Price << "\t QA=" << level.QuantityAvailable << "\t OC=" << level.OrderCount
+                            << "\t OLD=" << level.OldestOrderIndex << "\t NEW=" << level.NewestOrderIndex << "\t NHI="
+                            << level.NextHigherLevelIndex << "\t NLO=" << level.NextLowerLevelIndex << std::endl;
+                }
+                Console.WriteLine();
+
+                ref PriceLevelCollection bidCol = ref Engine.GetAskPriceLevelCollection();
+                Console.WriteLine(); 
+                Console.WriteLine("===================================   BIDS   ======================================");
+
+                for (int i = 0; i <= bidCol.MaxIndex(); i++) {
+                    ref level = bidCol.LevelAtIndex(i);
+                    if (!Unsafe.IsNullRef(ref level))
+                        std::cout << level.Price << "\t QA=" << level.QuantityAvailable << "\t OC=" << level.OrderCount
+                            << "\t OLD=" << level.OldestOrderIndex << "\t NEW=" << level.NewestOrderIndex << "\t NHI="
+                            << level.NextHigherLevelIndex << "\t NLO=" << level.NextLowerLevelIndex << std::endl;
+                }
+                Console.WriteLine();*/
+            }
+
         }
         
         Console.WriteLine();

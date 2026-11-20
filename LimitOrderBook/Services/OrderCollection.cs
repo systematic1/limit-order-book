@@ -159,31 +159,16 @@ public class OrderCollection : IDisposable
         return false;
     }
 
-    public ref Order FindBestAtPriceLevel(ref PriceLevel nextLevel, ref readonly PriceLevelCollection levels, 
+    public ref Order FindBestAtPriceLevel(ref PriceLevel atLevel, ref readonly PriceLevelCollection levels, 
         OrderSide matchSide)
     {
-        // Search for the next order by date/time and price (ask=search higher, bid=search lower)
-        // * Use the PriceLevel.NextHigherIndex or PriceLevel.NextLowerIndex
-        // * Move to next price level and search for orders matching that price level index
-        // * Find the oldest order
-
-        //ref PriceLevel nextLevel = ref priceLevel;
-        int nextIndex;
-        
-        while (!Unsafe.IsNullRef(ref nextLevel) && nextLevel.IsEmpty())
+        if (!Unsafe.IsNullRef(ref atLevel) && atLevel.OldestOrderIndex != -1)
         {
-            nextIndex = (matchSide == OrderSide.Buy ? nextLevel.NextLowerLevelIndex : nextLevel.NextHigherLevelIndex);
-            if (nextIndex != -1)
-                nextLevel = ref levels.GetPriceLevelByIndex(nextIndex);
-            else
-                nextLevel = ref Unsafe.NullRef<PriceLevel>();
+            if (atLevel.OldestOrderIndex <= HighestIndex && !Available[atLevel.OldestOrderIndex])
+                return ref Orders[atLevel.OldestOrderIndex];
         }
-
-        if (!Unsafe.IsNullRef(ref nextLevel) && nextLevel.OldestOrderIndex != -1)
-        {
-            if (nextLevel.OldestOrderIndex < Capacity && !Available[nextLevel.OldestOrderIndex])
-                return ref Orders[nextLevel.OldestOrderIndex];
-        }
+        else if (atLevel.OrderCount == 1 && atLevel.NewestOrderIndex != -1)
+            return ref Orders[atLevel.NewestOrderIndex];
 
         return ref Unsafe.NullRef<Order>();    
     }
