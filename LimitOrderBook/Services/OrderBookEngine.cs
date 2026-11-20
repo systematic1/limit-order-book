@@ -47,7 +47,7 @@ public class OrderBookEngine : IDisposable
                 priceLevel = ref AskPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
                 {
-                    levelIndex = AskPriceLevels.GetNextLowerPriceLevel(price);
+                    levelIndex = AskPriceLevels.GetNextHigherPriceLevel(price);
                     if (levelIndex == -1)   // If no more orders are available, jump out of loop here
                         break;
 
@@ -72,7 +72,7 @@ public class OrderBookEngine : IDisposable
                 priceLevel = ref BidPriceLevels.GetPriceLevelByPrice(price);
                 if (Unsafe.IsNullRef(ref priceLevel))
                 {
-                    levelIndex = BidPriceLevels.GetNextHigherPriceLevel(price);
+                    levelIndex = BidPriceLevels.GetNextLowerPriceLevel(price);
                     if (levelIndex == -1)  // If no more orders are available, jump out of loop here
                         break;
 
@@ -138,7 +138,7 @@ public class OrderBookEngine : IDisposable
     {
         try
         {
-            await NotificationService.SendNotification(99999, fillResults.OrderID, 
+            await NotificationService.SendNotification(fillResults.AccountID, fillResults.OrderID, 
                 fillResults.Status, fillResults.Message.AsMemory());
         }
         catch (Exception e)
@@ -187,26 +187,23 @@ public class OrderBookEngine : IDisposable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public OrderCollection GetOrderCollection() => Orders;
+    public ref OrderCollection GetOrderCollection() => ref Orders;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public PriceLevelCollection GetAskPriceLevelCollection() => AskPriceLevels;
+    public ref PriceLevelCollection GetAskPriceLevelCollection() => ref AskPriceLevels;
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public PriceLevelCollection GetBidPriceLevelCollection() => BidPriceLevels;
+    public ref PriceLevelCollection GetBidPriceLevelCollection() => ref BidPriceLevels;
 
     // =====================================================================================
     
     private OrderStatus ValidateOrder(ref Order order)
     {
         // Validate - Basic
-        if (order.RemainingQuantity <= 0)
-            return OrderStatus.Rejected;
-
         if (order.TotalQuantity < order.RemainingQuantity)
             return OrderStatus.Rejected;
 
-        if (order.TotalQuantity <= 0)
+        if (order.RemainingQuantity <= 0 || order.TotalQuantity <= 0)
             return OrderStatus.Rejected;
 
         if (order.OrderType != OrderType.Market && order.OrderType != OrderType.Limit)
@@ -284,7 +281,8 @@ public class OrderBookEngine : IDisposable
                     FillPrice = priceLevel.Price,
                     AuxData = 0,
                     Message = null,
-                    Status = matchedStatus
+                    Status = matchedStatus,
+                    AccountID = matchedOrder.AccountId
                 };
                 SetStatusMessage(ref matchResults);
                 NotifyOrderFillStatus(matchResults).GetAwaiter().GetResult();
@@ -298,7 +296,8 @@ public class OrderBookEngine : IDisposable
                     FillPrice = priceLevel.Price,
                     AuxData = 0,
                     Message = null,
-                    Status = currentStatus
+                    Status = currentStatus,
+                    AccountID = order.AccountId
                 };
                 SetStatusMessage(ref currentResults);
                 NotifyOrderFillStatus(currentResults).GetAwaiter().GetResult();

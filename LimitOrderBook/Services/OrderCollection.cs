@@ -30,6 +30,20 @@ public class OrderCollection : IDisposable
         Available = new bool[Capacity];
         Array.Fill<bool>(Available, true);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int MaxIndex()
+    {
+        return HighestIndex;
+    }
+
+    public ref Order OrderAtIndex(int index)
+    {
+        if (index >= 0 && index <= HighestIndex && !Available[index])
+            return ref Orders[index];
+
+        return ref Unsafe.NullRef<Order>();
+    }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int FindOrderIndex(long orderId)

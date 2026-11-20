@@ -10,4 +10,5 @@ public struct FillResults
     public long AuxData { get; set; }
     public string? Message { get; set; }
     public OrderStatus Status { get; set; }
+    public long AccountID { get; set; }
 }

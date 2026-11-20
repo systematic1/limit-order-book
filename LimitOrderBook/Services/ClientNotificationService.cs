@@ -12,7 +12,7 @@ public class ClientNotificationService
     {
     }
 
-    public async ValueTask SendNotification(int accountId, long orderId, OrderStatus status, ReadOnlyMemory<char> message)
+    public async ValueTask SendNotification(long accountId, long orderId, OrderStatus status, ReadOnlyMemory<char> message)
     {
         if (Enabled)
         {
