@@ -119,10 +119,6 @@ public class OrderBookEngine : IDisposable
 
         // Find the price level and adjust the quantity remaining and order count
         ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
-        /*if (storedOrderRef.Side == OrderSide.Buy)
-            priceLevel = ref BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price); 
-        else
-            priceLevel = ref AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);*/
         priceLevel = ref priceLevelsSide.GetPriceLevelByPrice(storedOrderRef.Price);
 
         if (Unsafe.IsNullRef(ref priceLevel))
