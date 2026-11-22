@@ -29,6 +29,10 @@ public struct PriceLevel
         Side = side;
         LastFillQuantity = 0L;
         LastFillTimestamp = 0L;
+        NewestOrderIndex = -1;
+        OldestOrderIndex = -1;
+        NextHigherLevelIndex = -1;
+        NextLowerLevelIndex = -1;
     }
 
     public void Clear()

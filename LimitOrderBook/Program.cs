@@ -305,7 +305,7 @@ class Program : IDisposable
         List<int> orderNumbers = new List<int>();
         
         const double highPrice = 12.00;
-        const double lowPrice = 11.50;
+        const double lowPrice = 11.80;
         const int lowQuantity = 1;
         const int highQuantity = 50;
         
@@ -402,22 +402,22 @@ class Program : IDisposable
                     if (!Unsafe.IsNullRef(ref order)) {
                         Console.WriteLine($"{order.OrderId}\t {(order.Side == OrderSide.Buy ? "BUY \t$" : "SELL\t$")} " +
                             $"{(order.Price) / 100.0}\t RQ={order.RemainingQuantity}\t TQ=" +
-                            $"{order.TotalQuantity}\t ${(order.OrderType == OrderType.Limit ? "LIM " : "MKT ")}" +
+                            $"{order.TotalQuantity}\t {(order.OrderType == OrderType.Limit ? "LIM " : "MKT ")}" +
                             $"\t OLD={order.NextOlderOrderIndexAtLevel}\t NEW={order.NextNewerOrderIndexAtLevel}");
                     }
                 }
                 Console.WriteLine();
 
-                /*ref PriceLevelCollection askCol = ref Engine.GetAskPriceLevelCollection();
+                ref PriceLevelCollection askCol = ref Engine.GetAskPriceLevelCollection();
                 Console.WriteLine(); 
                 Console.WriteLine("===================================   ASKS   ======================================");
 
                 for (int i = 0; i <= askCol.MaxIndex(); i++) {
-                    ref level = ref askCol.LevelAtIndex(i);
+                    ref PriceLevel level = ref askCol.LevelAtIndex(i);
                     if (!Unsafe.IsNullRef(ref level))
-                        std::cout << level.Price << "\t QA=" << level.QuantityAvailable << "\t OC=" << level.OrderCount
-                            << "\t OLD=" << level.OldestOrderIndex << "\t NEW=" << level.NewestOrderIndex << "\t NHI="
-                            << level.NextHigherLevelIndex << "\t NLO=" << level.NextLowerLevelIndex << std::endl;
+                        Console.WriteLine($"{level.Price}\t QA={level.QuantityAvailable}\t OC={level.OrderCount}" + 
+                            $"\t OLD={level.OldestOrderIndex}\t NEW={level.NewestOrderIndex}\t NHI=" +
+                            $"{level.NextHigherLevelIndex}\t NLO={level.NextLowerLevelIndex}");
                 }
                 Console.WriteLine();
 
@@ -426,13 +426,13 @@ class Program : IDisposable
                 Console.WriteLine("===================================   BIDS   ======================================");
 
                 for (int i = 0; i <= bidCol.MaxIndex(); i++) {
-                    ref level = bidCol.LevelAtIndex(i);
+                    ref PriceLevel level = ref bidCol.LevelAtIndex(i);
                     if (!Unsafe.IsNullRef(ref level))
-                        std::cout << level.Price << "\t QA=" << level.QuantityAvailable << "\t OC=" << level.OrderCount
-                            << "\t OLD=" << level.OldestOrderIndex << "\t NEW=" << level.NewestOrderIndex << "\t NHI="
-                            << level.NextHigherLevelIndex << "\t NLO=" << level.NextLowerLevelIndex << std::endl;
+                        Console.WriteLine($"{level.Price}\t QA={level.QuantityAvailable}\t OC={level.OrderCount}" + 
+                              $"\t OLD={level.OldestOrderIndex}\t NEW={level.NewestOrderIndex}\t NHI=" +
+                              $"{level.NextHigherLevelIndex}\t NLO={level.NextLowerLevelIndex}");
                 }
-                Console.WriteLine();*/
+                Console.WriteLine();
             }
 
         }

@@ -39,6 +39,8 @@ public struct Order
         TimeToLive = timeToLive;
         AccountId = accountId;
         SecurityId = securityId;
+        NextOlderOrderIndexAtLevel = -1;
+        NextNewerOrderIndexAtLevel = -1;
     }
 
     public void InitFrom(Order source)

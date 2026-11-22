@@ -57,6 +57,9 @@ public class OrderBookEngine : IDisposable
                 // Find a matching order and fill it
                 quantityFilled = FillMatchingOrder(ref priceLevel, ref order);
                 wasFilled = (quantityFilled > 0);
+
+                if (priceLevel.IsEmpty())
+                    AskPriceLevels.RemovePriceLevel(priceLevel.Price);
             }
         }
         else     // Sell OrderSide
@@ -77,23 +80,21 @@ public class OrderBookEngine : IDisposable
                         break;
 
                     priceLevel = ref BidPriceLevels.GetPriceLevelByIndex(levelIndex);
-                    order.PriceLevelIndex = levelIndex;
                 }
                     
                 // Find a matching order and fill it
                 quantityFilled = FillMatchingOrder(ref priceLevel, ref order);
                 wasFilled = (quantityFilled > 0);
-            }
+
+                if (priceLevel.IsEmpty())
+                    BidPriceLevels.RemovePriceLevel(priceLevel.Price);            }
         }
 
         order.Timestamp = DateTime.Now.Ticks;
 
         // If we filled the entire order quantity, then return "filled" status
         if (order.RemainingQuantity == 0)
-        {
-            Orders.RemoveOrder(ref order, ref priceLevel);
             return OrderStatus.Filled;
-        }
 
         // If we couldn't fill any of a market order, reject it, otherwise partial fill it.
         if (order.OrderType == OrderType.Market)
@@ -112,18 +113,26 @@ public class OrderBookEngine : IDisposable
         if (Unsafe.IsNullRef(ref storedOrderRef))
             return OrderStatus.NotFound;
 
+        ref PriceLevelCollection priceLevelsSide = ref BidPriceLevels; 
+        if (storedOrderRef.Side == OrderSide.Sell)
+            priceLevelsSide = ref AskPriceLevels;
+
         // Find the price level and adjust the quantity remaining and order count
         ref PriceLevel priceLevel = ref Unsafe.NullRef<PriceLevel>();
-        if (storedOrderRef.Side == OrderSide.Buy)
+        /*if (storedOrderRef.Side == OrderSide.Buy)
             priceLevel = ref BidPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price); 
         else
-            priceLevel = ref AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);
+            priceLevel = ref AskPriceLevels.GetPriceLevelByPrice(storedOrderRef.Price);*/
+        priceLevel = ref priceLevelsSide.GetPriceLevelByPrice(storedOrderRef.Price);
 
         if (Unsafe.IsNullRef(ref priceLevel))
             return OrderStatus.NotFound;
             
         priceLevel.QuantityAvailable -= storedOrderRef.RemainingQuantity;
         priceLevel.OrderCount--;
+        
+        if (priceLevel.OrderCount <= 0)
+            priceLevelsSide.RemovePriceLevel(storedOrderRef.Price);
         
         // Remove the order from the order list
         storedOrderRef.PriceLevelIndex = -1;
@@ -309,10 +318,10 @@ public class OrderBookEngine : IDisposable
                 
                 // If either order was completely filled, it needs to be removed from the orderbook
                 if (matchedOrder.RemainingQuantity == 0)
+                {
                     Orders.RemoveOrder(ref matchedOrder, ref priceLevel);
-
-                if (order.RemainingQuantity == 0)
-                    Orders.RemoveOrder(ref order, ref priceLevel);
+                    priceLevel.OrderCount--;
+                }
             }
         }
 
