@@ -138,8 +138,7 @@ public class OrderBookEngine : IDisposable
     {
         try
         {
-            await NotificationService.SendNotification(fillResults.AccountID, fillResults.OrderID, 
-                fillResults.Status, fillResults.Message.AsMemory());
+            await NotificationService.SendNotification(fillResults);
         }
         catch (Exception e)
         {

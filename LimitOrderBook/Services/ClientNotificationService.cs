@@ -12,7 +12,7 @@ public class ClientNotificationService
     {
     }
 
-    public async ValueTask SendNotification(long accountId, long orderId, OrderStatus status, ReadOnlyMemory<char> message)
+    public async ValueTask SendNotification(FillResults results)
     {
         if (Enabled)
         {
@@ -36,16 +36,26 @@ public class ClientNotificationService
             int bytes = 0;
             char[] buffer = ArrayPool<char>.Shared.Rent(512);
 
-            buffer.TryWrite($"{accountId}|{orderId}|{(int)status}|{timestamp}|{message}", out bytes);
+            buffer.TryWrite($"{results.AccountID}|{results.OrderID}|{(int)results.Status}|{timestamp}|{results.Message}", out bytes);
 
             // Convert to the text stream format and submit to the pipe server
             await streamWriter.WriteLineAsync(buffer.AsMemory(0, bytes));
+            
+            await PostResultsToLog(results);
 
             ArrayPool<char>.Shared.Return(buffer, true);
         }
         else
         {
-            Console.WriteLine($"  ** NOTIFY ----> AC={accountId}, ID={orderId}, ST={status}: {message}");
+            Console.WriteLine($"  ** NOTIFY ----> AC={results.AccountID}, ID={results.OrderID}, ST={results.Status}: {results.Message}");
         }
+    }
+
+    private async ValueTask PostResultsToLog(FillResults result)
+    {
+        // TO DO...
+        // This would queue up the notification messages received from the engine to be
+        //  posted to a log (file or DB) somewhere. It would need to be asynchronous to
+        //  ensure it doesn't add any performance drag to the application.
     }
 }
