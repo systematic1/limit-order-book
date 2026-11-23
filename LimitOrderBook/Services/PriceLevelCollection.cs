@@ -28,7 +28,20 @@ public class PriceLevelCollection : IDisposable
         // Pre-allocate the pool and set available indices values to 1
         Levels = new PriceLevel[Capacity];
         Available = new bool[Capacity];
-        Array.Fill<bool>(Available, true);
+        Array.Fill(Levels, new PriceLevel());
+        Array.Fill(Available, true);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int MaxIndex() => HighestIndex;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public ref PriceLevel LevelAtIndex(int index)
+    {
+        if (index >= 0 && index <= HighestIndex && !Available[index])
+            return ref Levels[index];
+
+        return ref Unsafe.NullRef<PriceLevel>();
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -72,9 +85,9 @@ public class PriceLevelCollection : IDisposable
             
         for (int index = 0; index <= HighestIndex; index++)
         {
-            if (!Available[index] && Levels[index].Price > price)
+            if (!Available[index] && Levels[index].Price > price && Levels[index].Price < nearestHigherPrice)
             {
-                nearestHigherPrice = Math.Min(Levels[index].Price, nearestHigherPrice);
+                nearestHigherPrice = Levels[index].Price;
                 nextHigherIndex = index;
             }
         }
@@ -89,9 +102,9 @@ public class PriceLevelCollection : IDisposable
 
         for (int index = 0; index <= HighestIndex; index++)
         {
-            if (!Available[index] && Levels[index].Price < price)
+            if (!Available[index] && Levels[index].Price < price && Levels[index].Price > nearestLowerPrice)
             {
-                nearestLowerPrice = Math.Max(Levels[index].Price, nearestLowerPrice);
+                nearestLowerPrice = Levels[index].Price;
                 nextLowerIndex = index;
             }
         }
@@ -104,10 +117,9 @@ public class PriceLevelCollection : IDisposable
         if (CountInUse < Capacity)
         {
             // 1. Find the price level in the list that has the next higher price above this order [HigherLevel]
-            int nextHigherIndex = GetNextHigherPriceLevel(price); 
-
             // 2. Save the price level index from HigherLevel.NextLowerIndex [LowerLevel]
-            int higherLevel_LowerIndex = (nextHigherIndex == -1 ? -1 : Levels[nextHigherIndex].NextLowerLevelIndex);
+            int nextHigherIndex = GetNextHigherPriceLevel(price);
+            int nextLowerIndex = GetNextLowerPriceLevel(price);
             
             // 3. Insert a new price level [NewLevel] and link HigherLevel.NextLowerIndex to its index
             int loopCount = 0;
@@ -129,13 +141,13 @@ public class PriceLevelCollection : IDisposable
 
                 // 5. Link NewLevel.NextHigherIndex to HigherLevel, and link NewLevel.NextLowerIndex to LowerLevel
                 // Link LowerLevel.NextHigherIndex to NewLevel
-                Levels[LastIndex].NextLowerLevelIndex = higherLevel_LowerIndex;
+                Levels[LastIndex].NextLowerLevelIndex = nextLowerIndex;
                 Levels[LastIndex].NextHigherLevelIndex = nextHigherIndex;
                 
-                if (nextHigherIndex > -1)
+                if (nextHigherIndex != -1)
                     Levels[nextHigherIndex].NextLowerLevelIndex = LastIndex;
-                if (higherLevel_LowerIndex > -1)
-                    Levels[higherLevel_LowerIndex].NextHigherLevelIndex = LastIndex;
+                if (nextLowerIndex != -1)
+                    Levels[nextLowerIndex].NextHigherLevelIndex = LastIndex;
 
                 // 6. Mark NewLevel's AvailableIndex as 0 and increment CountInUse
                 Available[LastIndex] = false;

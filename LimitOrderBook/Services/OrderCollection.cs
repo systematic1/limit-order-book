@@ -28,15 +28,14 @@ public class OrderCollection : IDisposable
         // Pre-allocate the pool and set available indices values to true
         Orders = new Order[Capacity];
         Available = new bool[Capacity];
-        Array.Fill<bool>(Available, true);
+        Array.Fill(Orders, new Order());
+        Array.Fill(Available, true);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public int MaxIndex()
-    {
-        return HighestIndex;
-    }
+    public int MaxIndex() => HighestIndex;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public ref Order OrderAtIndex(int index)
     {
         if (index >= 0 && index <= HighestIndex && !Available[index])
@@ -162,13 +161,13 @@ public class OrderCollection : IDisposable
     public ref Order FindBestAtPriceLevel(ref PriceLevel atLevel, ref readonly PriceLevelCollection levels, 
         OrderSide matchSide)
     {
-        if (!Unsafe.IsNullRef(ref atLevel) && atLevel.OldestOrderIndex != -1)
+        if (!Unsafe.IsNullRef(ref atLevel))
         {
-            if (atLevel.OldestOrderIndex <= HighestIndex && !Available[atLevel.OldestOrderIndex])
+            if (atLevel.OldestOrderIndex != -1 && atLevel.OldestOrderIndex <= HighestIndex && !Available[atLevel.OldestOrderIndex])
                 return ref Orders[atLevel.OldestOrderIndex];
+            if (atLevel.OrderCount == 1 && atLevel.NewestOrderIndex != -1)
+                return ref Orders[atLevel.NewestOrderIndex];
         }
-        else if (atLevel.OrderCount == 1 && atLevel.NewestOrderIndex != -1)
-            return ref Orders[atLevel.NewestOrderIndex];
 
         return ref Unsafe.NullRef<Order>();    
     }
