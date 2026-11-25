@@ -51,7 +51,7 @@ class Program
             double price = ((highPrice - lowPrice) * Random.Shared.NextDouble()) + lowPrice;
             int quantity = Random.Shared.Next(lowQuantity, highQuantity);
 
-            if (Random.Shared.Next() % 10 > 6)
+            if (Random.Shared.Next() % 10 > 4)
                 orderType = OrderType.Limit;
             else
                 orderType = OrderType.Market;
@@ -65,7 +65,7 @@ class Program
                 }
                 while (orderNumbers.IndexOf(newOrderId) != -1);
                                     
-                orderNumbers.Add(Random.Shared.Next());
+                orderNumbers.Add(newOrderId);
             }
             else
             {
